@@ -1,9 +1,9 @@
-// ---------------------------------------------------------------------------
+// -----------------------------------------------------------------------
 // Query builders — immutable, chainable, parameterized.
 // Every value passes through column.__internal.encode() on the way in,
 // and column.__internal.decode() on the way out, at a single chokepoint each.
 // Builders receive `client` at construction — .execute() takes no arguments.
-// ---------------------------------------------------------------------------
+// -----------------------------------------------------------------------
 
 import type { SQLQueryBindings } from "bun:sqlite";
 import type { ColumnDef } from "../schema/columns";
@@ -11,9 +11,9 @@ import type { Condition } from "./conditions";
 import { compileConditions } from "./conditions";
 import type { TableDef, InferRow } from "../schema/table";
 
-// ---------------------------------------------------------------------------
+// -----------------------------------------------------------------------
 // Shared helpers
-// ---------------------------------------------------------------------------
+// -----------------------------------------------------------------------
 
 /** Cast params array to what bun:sqlite expects. */
 function bind(params: unknown[]): SQLQueryBindings[] {
@@ -37,9 +37,18 @@ function decodeRow<T extends TableDef<any>>(
   return out as InferRow<T>;
 }
 
-// ---------------------------------------------------------------------------
+// -----------------------------------------------------------------------
+// Executable — structural type for anything that can produce SQL.
+// batch() uses this so it's not tied to any specific builder class.
+// -----------------------------------------------------------------------
+
+export interface Executable {
+  toSQL(): { sql: string; params: unknown[] };
+}
+
+// -----------------------------------------------------------------------
 // Client type — anything that can run SQL
-// ---------------------------------------------------------------------------
+// -----------------------------------------------------------------------
 
 export interface DatabaseClient {
   prepare(sql: string): {
@@ -48,11 +57,33 @@ export interface DatabaseClient {
   };
 }
 
-// ---------------------------------------------------------------------------
-// SELECT
-// ---------------------------------------------------------------------------
+// -----------------------------------------------------------------------
+// SELECT — two-phase: SelectStage1 (only .from()) → SelectBuilder
+// -----------------------------------------------------------------------
 
-export class SelectBuilder<T extends TableDef<any>> {
+/** First phase: only .from() is available. Prevents calling .toSQL()/.execute() before supplying a table. */
+export interface SelectStage1 {
+  from<U extends TableDef<any>>(table: U): SelectBuilder<U>;
+}
+
+/** Lightweight wrapper that only exposes .from(). */
+export class SelectFromBuilder implements SelectStage1 {
+  #client: DatabaseClient;
+  #conditions: Condition[];
+
+  constructor(client: DatabaseClient, conditions: Condition[] = []) {
+    this.#client = client;
+    this.#conditions = conditions;
+  }
+
+  from<U extends TableDef<any>>(table: U): SelectBuilder<U> {
+    const name = (table as any)._.name as string;
+    return new SelectBuilder(this.#client, name, table, this.#conditions);
+  }
+}
+
+/** Full SELECT builder — available after .from() has been called. */
+export class SelectBuilder<T extends TableDef<any>> implements Executable {
   #client: DatabaseClient;
   #tableName: string;
   #table: T;
@@ -63,11 +94,6 @@ export class SelectBuilder<T extends TableDef<any>> {
     this.#tableName = tableName;
     this.#table = table;
     this.#conditions = conditions;
-  }
-
-  from<U extends TableDef<any>>(table: U): SelectBuilder<U> {
-    const name = (table as any)._.name as string;
-    return new SelectBuilder(this.#client, name, table, this.#conditions);
   }
 
   where(condition: Condition): SelectBuilder<T> {
@@ -91,11 +117,11 @@ export class SelectBuilder<T extends TableDef<any>> {
   }
 }
 
-// ---------------------------------------------------------------------------
+// -----------------------------------------------------------------------
 // INSERT
-// ---------------------------------------------------------------------------
+// -----------------------------------------------------------------------
 
-export class InsertBuilder<T extends TableDef<any>> {
+export class InsertBuilder<T extends TableDef<any>> implements Executable {
   #client: DatabaseClient;
   #tableName: string;
   #table: T;
@@ -132,11 +158,11 @@ export class InsertBuilder<T extends TableDef<any>> {
   }
 }
 
-// ---------------------------------------------------------------------------
+// -----------------------------------------------------------------------
 // UPDATE
-// ---------------------------------------------------------------------------
+// -----------------------------------------------------------------------
 
-export class UpdateBuilder<T extends TableDef<any>> {
+export class UpdateBuilder<T extends TableDef<any>> implements Executable {
   #client: DatabaseClient;
   #tableName: string;
   #table: T;
@@ -186,11 +212,11 @@ export class UpdateBuilder<T extends TableDef<any>> {
   }
 }
 
-// ---------------------------------------------------------------------------
+// -----------------------------------------------------------------------
 // DELETE
-// ---------------------------------------------------------------------------
+// -----------------------------------------------------------------------
 
-export class DeleteBuilder<T extends TableDef<any>> {
+export class DeleteBuilder<T extends TableDef<any>> implements Executable {
   #client: DatabaseClient;
   #tableName: string;
   #table: T;

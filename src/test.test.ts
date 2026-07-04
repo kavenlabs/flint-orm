@@ -1,12 +1,12 @@
-// ---------------------------------------------------------------------------
+// -----------------------------------------------------------------------
 // Test: create a real SQLite DB, define a table, and exercise the full
 // insert → select → update → delete cycle, printing results so encode/decode
 // round-trips (especially boolean and JSON) can be visually confirmed.
-// ---------------------------------------------------------------------------
+// -----------------------------------------------------------------------
 
 import { flint } from "./flint";
 import { eq, and } from "./query/conditions";
-import { text, boolean, json } from "./schema/columns";
+import { text, boolean, json, integer } from "./schema/columns";
 import { table } from "./schema/table";
 // import type { InferRow } from "./schema/table";
 
@@ -17,6 +17,12 @@ const users = table("users", {
   name: text("name").notNull(),
   active: boolean("active").notNull(),
   metadata: json<{ role: string; tags: string[] }>("metadata"),
+});
+
+const orders = table("orders", {
+  id: text("id").primaryKey(),
+  userId: text("userId").notNull(),
+  total: integer("total").notNull(),
 });
 
 // ── Type test (compile-time) ──────────────────────────────────────────────
@@ -33,6 +39,12 @@ db.$client.run(`CREATE TABLE IF NOT EXISTS users (
   name TEXT NOT NULL,
   active INTEGER NOT NULL,
   metadata TEXT
+)`);
+
+db.$client.run(`CREATE TABLE IF NOT EXISTS orders (
+  id TEXT PRIMARY KEY,
+  userId TEXT NOT NULL,
+  total INTEGER NOT NULL
 )`);
 
 // ── INSERT ─────────────────────────────────────────────────────────────────
@@ -56,15 +68,12 @@ console.log("✓ inserted 1 row\n");
 // ── SELECT ─────────────────────────────────────────────────────────────────
 
 console.log("── SELECT all ──");
-
 const allRows = db.select().from(users).execute();
 console.log(JSON.stringify(allRows, null, 2));
 console.log();
 
 console.log("── SELECT with WHERE ──");
-
 const alice = db.select().from(users).where(eq(users.name, "Alice")).execute();
-
 console.log(JSON.stringify(alice, null, 2));
 console.log();
 
@@ -82,16 +91,13 @@ db.update(users)
   .execute();
 
 const updated = db.select().from(users).where(eq(users.id, "u1")).execute();
-
 console.log(JSON.stringify(updated, null, 2));
 console.log();
 
 // ── DELETE ─────────────────────────────────────────────────────────────────
 
 console.log("── DELETE ──");
-
 db.delete(users).where(eq(users.id, "u1")).execute();
-
 const afterDelete = db.select().from(users).execute();
 console.log("rows remaining:", afterDelete.length);
 console.log();
@@ -117,6 +123,19 @@ const bobs = db
 
 console.log(JSON.stringify(bobs, null, 2));
 console.log();
+
+// ── BATCH ──────────────────────────────────────────────────────────────────
+
+console.log("── BATCH (atomic insert) ──");
+
+db.batch([
+  db.insert(orders).values({ id: "o1", userId: "u2", total: 100 }),
+  db.insert(orders).values({ id: "o2", userId: "u2", total: 250 }),
+]);
+
+const orderRows = db.select().from(orders).execute();
+console.log(JSON.stringify(orderRows, null, 2));
+console.log("✓ batch inserted", orderRows.length, "orders\n");
 
 // ── toSQL() debugging ─────────────────────────────────────────────────────
 
