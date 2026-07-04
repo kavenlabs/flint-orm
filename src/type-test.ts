@@ -1,9 +1,9 @@
 // Compile-time-only type tests — this file should fail `tsc` if eq() doesn't
 // enforce the column's _type on the value argument.
 
-import { boolean, text, json } from "./columns";
-import { table } from "./table";
-import { eq } from "./conditions";
+import { boolean, text, json } from "./schema/columns";
+import { table } from "./schema/table";
+import { eq } from "./query/conditions";
 
 const users = table("users", {
   id: text("id"),

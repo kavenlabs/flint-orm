@@ -2,13 +2,14 @@
 // Query builders — immutable, chainable, parameterized.
 // Every value passes through column.__internal.encode() on the way in,
 // and column.__internal.decode() on the way out, at a single chokepoint each.
+// Builders receive `client` at construction — .execute() takes no arguments.
 // ---------------------------------------------------------------------------
 
-import { type Database, type SQLQueryBindings } from "bun:sqlite";
-import type { ColumnDef } from "./columns";
+import type { SQLQueryBindings } from "bun:sqlite";
+import type { ColumnDef } from "../schema/columns";
 import type { Condition } from "./conditions";
 import { compileConditions } from "./conditions";
-import type { TableDef, InferRow } from "./table";
+import type { TableDef, InferRow } from "../schema/table";
 
 // ---------------------------------------------------------------------------
 // Shared helpers
@@ -37,15 +38,28 @@ function decodeRow<T extends TableDef<any>>(
 }
 
 // ---------------------------------------------------------------------------
+// Client type — anything that can run SQL
+// ---------------------------------------------------------------------------
+
+export interface DatabaseClient {
+  prepare(sql: string): {
+    all(...params: SQLQueryBindings[]): unknown[];
+    run(...params: SQLQueryBindings[]): void;
+  };
+}
+
+// ---------------------------------------------------------------------------
 // SELECT
 // ---------------------------------------------------------------------------
 
 export class SelectBuilder<T extends TableDef<any>> {
+  #client: DatabaseClient;
   #tableName: string;
   #table: T;
   #conditions: Condition[];
 
-  constructor(tableName: string, table: T, conditions: Condition[] = []) {
+  constructor(client: DatabaseClient, tableName: string, table: T, conditions: Condition[] = []) {
+    this.#client = client;
     this.#tableName = tableName;
     this.#table = table;
     this.#conditions = conditions;
@@ -53,11 +67,11 @@ export class SelectBuilder<T extends TableDef<any>> {
 
   from<U extends TableDef<any>>(table: U): SelectBuilder<U> {
     const name = (table as any)._.name as string;
-    return new SelectBuilder(name, table, this.#conditions);
+    return new SelectBuilder(this.#client, name, table, this.#conditions);
   }
 
   where(condition: Condition): SelectBuilder<T> {
-    return new SelectBuilder(this.#tableName, this.#table, [...this.#conditions, condition]);
+    return new SelectBuilder(this.#client, this.#tableName, this.#table, [...this.#conditions, condition]);
   }
 
   toSQL(): { sql: string; params: unknown[] } {
@@ -70,16 +84,11 @@ export class SelectBuilder<T extends TableDef<any>> {
     return { sql, params };
   }
 
-  execute(db: Database): InferRow<T>[] {
+  execute(): InferRow<T>[] {
     const { sql, params } = this.toSQL();
-    const rows = db.prepare(sql).all(...bind(params)) as Record<string, unknown>[];
+    const rows = this.#client.prepare(sql).all(...bind(params)) as Record<string, unknown>[];
     return rows.map((r) => decodeRow(r, this.#table));
   }
-}
-
-/** `select()` returns a builder waiting for `.from()`. */
-export function select(): SelectBuilder<any> {
-  return new SelectBuilder("", null as any);
 }
 
 // ---------------------------------------------------------------------------
@@ -87,18 +96,20 @@ export function select(): SelectBuilder<any> {
 // ---------------------------------------------------------------------------
 
 export class InsertBuilder<T extends TableDef<any>> {
+  #client: DatabaseClient;
   #tableName: string;
   #table: T;
   #row: InferRow<T> | undefined;
 
-  constructor(tableName: string, table: T, row?: InferRow<T>) {
+  constructor(client: DatabaseClient, tableName: string, table: T, row?: InferRow<T>) {
+    this.#client = client;
     this.#tableName = tableName;
     this.#table = table;
     this.#row = row;
   }
 
   values(row: InferRow<T>): InsertBuilder<T> {
-    return new InsertBuilder(this.#tableName, this.#table, row);
+    return new InsertBuilder(this.#client, this.#tableName, this.#table, row);
   }
 
   toSQL(): { sql: string; params: unknown[] } {
@@ -115,15 +126,10 @@ export class InsertBuilder<T extends TableDef<any>> {
     };
   }
 
-  execute(db: Database): void {
+  execute(): void {
     const { sql, params } = this.toSQL();
-    db.prepare(sql).run(...bind(params));
+    this.#client.prepare(sql).run(...bind(params));
   }
-}
-
-export function insert<T extends TableDef<any>>(table: T): InsertBuilder<T> {
-  const name = (table as any)._.name as string;
-  return new InsertBuilder(name, table);
 }
 
 // ---------------------------------------------------------------------------
@@ -131,17 +137,20 @@ export function insert<T extends TableDef<any>>(table: T): InsertBuilder<T> {
 // ---------------------------------------------------------------------------
 
 export class UpdateBuilder<T extends TableDef<any>> {
+  #client: DatabaseClient;
   #tableName: string;
   #table: T;
   #set: Partial<InferRow<T>>;
   #conditions: Condition[];
 
   constructor(
+    client: DatabaseClient,
     tableName: string,
     table: T,
     set: Partial<InferRow<T>> = {},
     conditions: Condition[] = [],
   ) {
+    this.#client = client;
     this.#tableName = tableName;
     this.#table = table;
     this.#set = set;
@@ -149,11 +158,11 @@ export class UpdateBuilder<T extends TableDef<any>> {
   }
 
   set(partial: Partial<InferRow<T>>): UpdateBuilder<T> {
-    return new UpdateBuilder(this.#tableName, this.#table, { ...this.#set, ...partial }, this.#conditions);
+    return new UpdateBuilder(this.#client, this.#tableName, this.#table, { ...this.#set, ...partial }, this.#conditions);
   }
 
   where(condition: Condition): UpdateBuilder<T> {
-    return new UpdateBuilder(this.#tableName, this.#table, this.#set, [...this.#conditions, condition]);
+    return new UpdateBuilder(this.#client, this.#tableName, this.#table, this.#set, [...this.#conditions, condition]);
   }
 
   toSQL(): { sql: string; params: unknown[] } {
@@ -171,15 +180,10 @@ export class UpdateBuilder<T extends TableDef<any>> {
     return { sql, params };
   }
 
-  execute(db: Database): void {
+  execute(): void {
     const { sql, params } = this.toSQL();
-    db.prepare(sql).run(...bind(params));
+    this.#client.prepare(sql).run(...bind(params));
   }
-}
-
-export function update<T extends TableDef<any>>(table: T): UpdateBuilder<T> {
-  const name = (table as any)._.name as string;
-  return new UpdateBuilder(name, table);
 }
 
 // ---------------------------------------------------------------------------
@@ -187,18 +191,20 @@ export function update<T extends TableDef<any>>(table: T): UpdateBuilder<T> {
 // ---------------------------------------------------------------------------
 
 export class DeleteBuilder<T extends TableDef<any>> {
+  #client: DatabaseClient;
   #tableName: string;
   #table: T;
   #conditions: Condition[];
 
-  constructor(tableName: string, table: T, conditions: Condition[] = []) {
+  constructor(client: DatabaseClient, tableName: string, table: T, conditions: Condition[] = []) {
+    this.#client = client;
     this.#tableName = tableName;
     this.#table = table;
     this.#conditions = conditions;
   }
 
   where(condition: Condition): DeleteBuilder<T> {
-    return new DeleteBuilder(this.#tableName, this.#table, [...this.#conditions, condition]);
+    return new DeleteBuilder(this.#client, this.#tableName, this.#table, [...this.#conditions, condition]);
   }
 
   toSQL(): { sql: string; params: unknown[] } {
@@ -209,13 +215,8 @@ export class DeleteBuilder<T extends TableDef<any>> {
     return { sql, params };
   }
 
-  execute(db: Database): void {
+  execute(): void {
     const { sql, params } = this.toSQL();
-    db.prepare(sql).run(...bind(params));
+    this.#client.prepare(sql).run(...bind(params));
   }
-}
-
-export function delete_<T extends TableDef<any>>(table: T): DeleteBuilder<T> {
-  const name = (table as any)._.name as string;
-  return new DeleteBuilder(name, table);
 }

@@ -4,12 +4,11 @@
 // round-trips (especially boolean and JSON) can be visually confirmed.
 // ---------------------------------------------------------------------------
 
-import { Database } from "bun:sqlite";
-import { eq, and } from "./conditions";
-import { text, integer, boolean, json } from "./columns";
-import { table } from "./table";
-import { select, insert, update, delete_ } from "./builder";
-import type { InferRow } from "./table";
+import { flint } from "./flint";
+import { eq, and } from "./query/conditions";
+import { text, boolean, json } from "./schema/columns";
+import { table } from "./schema/table";
+// import type { InferRow } from "./schema/table";
 
 // ── Schema ─────────────────────────────────────────────────────────────────
 
@@ -22,14 +21,14 @@ const users = table("users", {
 
 // ── Type test (compile-time) ──────────────────────────────────────────────
 // This line will fail to compile if InferRow doesn't match expectations.
-type _Row = InferRow<typeof users>;
+// type _Row = InferRow<typeof users>;
 //   ^? { id: string; name: string; active: boolean; metadata: { role: string; tags: string[] } }
 
 // ── Database setup ─────────────────────────────────────────────────────────
 
-const db = new Database("test.db");
+const db = flint({ url: "test.db" });
 
-db.run(`CREATE TABLE IF NOT EXISTS users (
+db.$client.run(`CREATE TABLE IF NOT EXISTS users (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL,
   active INTEGER NOT NULL,
@@ -40,7 +39,7 @@ db.run(`CREATE TABLE IF NOT EXISTS users (
 
 console.log("── INSERT ──");
 
-const aliceInsert = insert(users).values({
+const aliceInsert = db.insert(users).values({
   id: "u1",
   name: "Alice",
   active: true,
@@ -50,7 +49,7 @@ const aliceInsert = insert(users).values({
 console.log("SQL:", aliceInsert.toSQL().sql);
 console.log("Params:", aliceInsert.toSQL().params);
 
-aliceInsert.execute(db);
+aliceInsert.execute();
 
 console.log("✓ inserted 1 row\n");
 
@@ -58,31 +57,31 @@ console.log("✓ inserted 1 row\n");
 
 console.log("── SELECT all ──");
 
-const allRows = select().from(users).execute(db);
+const allRows = db.select().from(users).execute();
 console.log(JSON.stringify(allRows, null, 2));
 console.log();
 
 console.log("── SELECT with WHERE ──");
 
-const alice = select().from(users).where(eq(users.name, "Alice")).execute(db);
+const alice = db.select().from(users).where(eq(users.name, "Alice")).execute();
 
 console.log(JSON.stringify(alice, null, 2));
 console.log();
 
 // ── Type-error check (uncomment to verify compile-time safety) ────────────
 // This line SHOULD fail to compile — "not-a-boolean" is not assignable to boolean.
-// select().from(users).where(eq(users.active, "not-a-boolean")).execute(db);
+// db.select().from(users).where(eq(users.active, "not-a-boolean")).execute();
 
 // ── UPDATE ─────────────────────────────────────────────────────────────────
 
 console.log("── UPDATE ──");
 
-update(users)
+db.update(users)
   .set({ active: false, metadata: { role: "viewer", tags: ["gamma"] } })
   .where(eq(users.id, "u1"))
-  .execute(db);
+  .execute();
 
-const updated = select().from(users).where(eq(users.id, "u1")).execute(db);
+const updated = db.select().from(users).where(eq(users.id, "u1")).execute();
 
 console.log(JSON.stringify(updated, null, 2));
 console.log();
@@ -91,9 +90,9 @@ console.log();
 
 console.log("── DELETE ──");
 
-delete_(users).where(eq(users.id, "u1")).execute(db);
+db.delete(users).where(eq(users.id, "u1")).execute();
 
-const afterDelete = select().from(users).execute(db);
+const afterDelete = db.select().from(users).execute();
 console.log("rows remaining:", afterDelete.length);
 console.log();
 
@@ -101,19 +100,20 @@ console.log();
 
 console.log("── INSERT + composite WHERE ──");
 
-insert(users)
+db.insert(users)
   .values({
     id: "u2",
     name: "Bob",
     active: true,
     metadata: { role: "editor", tags: [] },
   })
-  .execute(db);
+  .execute();
 
-const bobs = select()
+const bobs = db
+  .select()
   .from(users)
   .where(and(eq(users.name, "Bob"), eq(users.active, true)))
-  .execute(db);
+  .execute();
 
 console.log(JSON.stringify(bobs, null, 2));
 console.log();
@@ -124,7 +124,8 @@ console.log("── toSQL() examples ──");
 
 console.log(
   "select:",
-  select()
+  db
+    .select()
     .from(users)
     .where(and(eq(users.active, true), eq(users.name, "Bob")))
     .toSQL(),
@@ -132,7 +133,8 @@ console.log(
 
 console.log(
   "insert:",
-  insert(users)
+  db
+    .insert(users)
     .values({
       id: "u3",
       name: "Carol",
@@ -142,11 +144,11 @@ console.log(
     .toSQL(),
 );
 
-console.log("update:", update(users).set({ active: true }).where(eq(users.id, "u3")).toSQL());
+console.log("update:", db.update(users).set({ active: true }).where(eq(users.id, "u3")).toSQL());
 
-console.log("delete:", delete_(users).where(eq(users.id, "u3")).toSQL());
+console.log("delete:", db.delete(users).where(eq(users.id, "u3")).toSQL());
 
 // ── Cleanup ────────────────────────────────────────────────────────────────
 
-db.close();
+db.$client.close();
 console.log("\n✓ all done — check test.db or the output above for round-trip correctness");

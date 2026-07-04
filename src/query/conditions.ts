@@ -2,7 +2,7 @@
 // Condition helpers — typed eq / and / or for WHERE clauses.
 // ---------------------------------------------------------------------------
 
-import type { ColumnDef } from "./columns";
+import type { ColumnDef } from "../schema/columns";
 
 /** A condition node — either a comparison or a logical组合. */
 export type Condition =

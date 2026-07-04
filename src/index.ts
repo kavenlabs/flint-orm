@@ -1,24 +1,17 @@
 // ---------------------------------------------------------------------------
-// flint-orm — public API exports
+// flint-orm — public API
 // ---------------------------------------------------------------------------
 
-// Column definitions
-export { type ColumnDef, text, integer, boolean, json, real } from "./columns";
+// Main entry: flint() factory + sql template
+export { flint, sql } from "./flint";
+export type { ConnectionDetails, SQLExpression } from "./flint";
 
-// Table definition
-export { type TableDef, type InferRow, table } from "./table";
+// Schema: table/column definitions (flint-orm/table)
+export { text, integer, boolean, json, real } from "./schema/columns";
+export type { ColumnDef } from "./schema/columns";
+export { table } from "./schema/table";
+export type { InferRow, TableDef } from "./schema/table";
 
-// Conditions
-export { type Condition, eq, and, or } from "./conditions";
-
-// Query builders
-export {
-  select,
-  insert,
-  update,
-  delete_,
-  SelectBuilder,
-  InsertBuilder,
-  UpdateBuilder,
-  DeleteBuilder,
-} from "./builder";
+// Conditions: eq, and, or (flint-orm/conditions)
+export { eq, and, or } from "./query/conditions";
+export type { Condition } from "./query/conditions";
