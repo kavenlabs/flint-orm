@@ -36,7 +36,7 @@ export function compileCondition(
 ): string {
   switch (cond.type) {
     case "eq":
-      params.push(cond.column.encode(cond.value));
+      params.push(cond.column.__internal.encode(cond.value));
       return `${cond.column.name} = ?`;
     case "and":
       return cond.conditions

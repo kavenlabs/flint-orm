@@ -26,9 +26,11 @@ export function table<T extends Record<string, ColumnDef<any, any>>>(
 
 /**
  * Derive the row shape from a table's column definitions.
- * Each column's phantom `_type` becomes the property type.
+ * Each column's phantom `_type` (inside `__internal`) becomes the property type.
  * Skips `_` metadata and any non-ColumnDef properties.
  */
 export type InferRow<T extends TableDef<any>> = {
-  [K in keyof Omit<T, "_">]: T[K] extends ColumnDef<any, any> ? T[K]["_type"] : never;
+  [K in keyof Omit<T, "_">]: T[K] extends ColumnDef<any, any>
+    ? T[K]["__internal"]["_type"]
+    : never;
 };

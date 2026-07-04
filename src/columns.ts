@@ -1,24 +1,40 @@
 // ---------------------------------------------------------------------------
 // Column definitions — each named function returns an immutable ColumnDef
-// with phantom _type, encode/decode, and chainable modifiers.
+// with chainable modifiers. Internal details live under __internal.
 // ---------------------------------------------------------------------------
 
+/**
+ * Column definition — the public shape consumers interact with.
+ *
+ * Only `name` and modifier methods are public. Everything else is under
+ * `__internal` — the naming signals "don't touch this".
+ */
 export interface ColumnDef<T, S extends string = string> {
   readonly name: string;
-  readonly sqlType: S;
-  /** Phantom — exists only at the type level, never accessed at runtime. */
-  readonly _type: T;
-  readonly encode: (value: T) => unknown;
-  readonly decode: (value: unknown) => T;
-  readonly isPrimaryKey: boolean;
-  readonly isNotNull: boolean;
-  readonly isUnique: boolean;
   primaryKey(): ColumnDef<T, S>;
   notNull(): ColumnDef<T, S>;
   unique(): ColumnDef<T, S>;
+  /** @internal Implementation details. Do not access directly. */
+  readonly __internal: {
+    /** Phantom — exists only at the type level, never accessed at runtime. */
+    readonly _type: T;
+    /** SQLite storage class: "text" | "integer" | "real" | "blob". */
+    readonly sqlType: S;
+    /** Column constraint flags — set via modifiers, read by migration generator. */
+    readonly isPrimaryKey: boolean;
+    readonly isNotNull: boolean;
+    readonly isUnique: boolean;
+    /** Converts logical value → storage value. Called by the builder. */
+    readonly encode: (value: T) => unknown;
+    /** Converts storage value → logical value. Called by the builder. */
+    readonly decode: (value: unknown) => T;
+  };
 }
 
-// Internal builder — not exported.
+// ---------------------------------------------------------------------------
+// Internal builder
+// ---------------------------------------------------------------------------
+
 function makeColumn<T, S extends string>(config: {
   name: string;
   sqlType: S;
@@ -27,25 +43,27 @@ function makeColumn<T, S extends string>(config: {
 }): ColumnDef<T, S> {
   const base = {
     name: config.name,
-    sqlType: config.sqlType,
-    _type: undefined as T,
-    encode: config.encode,
-    decode: config.decode,
-    isPrimaryKey: false,
-    isNotNull: false,
-    isUnique: false,
+    __internal: {
+      _type: undefined as unknown as T,
+      sqlType: config.sqlType,
+      isPrimaryKey: false,
+      isNotNull: false,
+      isUnique: false,
+      encode: config.encode,
+      decode: config.decode,
+    },
   };
 
   const col: ColumnDef<T, S> = {
     ...base,
     primaryKey() {
-      return { ...col, isPrimaryKey: true };
+      return { ...col, __internal: { ...col.__internal, isPrimaryKey: true } };
     },
     notNull() {
-      return { ...col, isNotNull: true };
+      return { ...col, __internal: { ...col.__internal, isNotNull: true } };
     },
     unique() {
-      return { ...col, isUnique: true };
+      return { ...col, __internal: { ...col.__internal, isUnique: true } };
     },
   };
 
