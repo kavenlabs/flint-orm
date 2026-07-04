@@ -4,12 +4,17 @@
 // -----------------------------------------------------------------------
 
 import { Database } from "bun:sqlite";
-import { SelectFromBuilder, InsertBuilder, UpdateBuilder, DeleteBuilder } from "./query/builder";
-import type { Executable, SelectStage1 } from "./query/builder";
+import {
+  SelectFromBuilder,
+  InsertValuesBuilder,
+  UpdateSetBuilder,
+  DeleteBuilder,
+} from "./query/builder";
+import type { Executable, SelectStage1, InsertStage1, UpdateStage1 } from "./query/builder";
 import type { TableDef } from "./schema/table";
 
 // Re-export Executable so consumers can type their own batch helpers.
-export type { Executable } from "./query/builder";
+export type { Executable, SelectStage1, InsertStage1, UpdateStage1 } from "./query/builder";
 
 // -----------------------------------------------------------------------
 // Connection details
@@ -35,11 +40,19 @@ export function flint(details: ConnectionDetails) {
      */
     select: (): SelectStage1 => new SelectFromBuilder(client),
 
-    /** Start an INSERT — call .values(row) next. */
-    insert: <T extends TableDef<any>>(table: T) => new InsertBuilder<T>(client, (table as any)._.name, table),
+    /**
+     * Start an INSERT — call .values(row) next.
+     * Returns InsertStage1: only .values() is available until a row is supplied.
+     */
+    insert: <T extends TableDef<any>>(table: T): InsertStage1<T> =>
+      new InsertValuesBuilder<T>(client, (table as any)._.name, table),
 
-    /** Start an UPDATE — call .set(partial) next. */
-    update: <T extends TableDef<any>>(table: T) => new UpdateBuilder<T>(client, (table as any)._.name, table),
+    /**
+     * Start an UPDATE — call .set(partial) next.
+     * Returns UpdateStage1: only .set() is available until values are supplied.
+     */
+    update: <T extends TableDef<any>>(table: T): UpdateStage1<T> =>
+      new UpdateSetBuilder<T>(client, (table as any)._.name, table),
 
     /** Start a DELETE — call .where(condition) next. */
     delete: <T extends TableDef<any>>(table: T) => new DeleteBuilder<T>(client, (table as any)._.name, table),

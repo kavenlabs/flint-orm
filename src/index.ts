@@ -4,7 +4,7 @@
 
 // Main entry: flint() factory + sql template
 export { flint, sql } from "./flint";
-export type { ConnectionDetails, SQLExpression, Executable } from "./flint";
+export type { ConnectionDetails, SQLExpression, Executable, SelectStage1, InsertStage1, UpdateStage1 } from "./flint";
 
 // Schema: table/column definitions (flint-orm/table)
 export { text, integer, boolean, json, real } from "./schema/columns";
@@ -15,6 +15,3 @@ export type { InferRow, TableDef } from "./schema/table";
 // Conditions: eq, and, or (flint-orm/conditions)
 export { eq, and, or } from "./query/conditions";
 export type { Condition } from "./query/conditions";
-
-// Query builders
-export type { SelectStage1 } from "./query/builder";

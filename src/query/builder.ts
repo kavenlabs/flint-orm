@@ -118,28 +118,46 @@ export class SelectBuilder<T extends TableDef<any>> implements Executable {
 }
 
 // -----------------------------------------------------------------------
-// INSERT
+// INSERT — two-phase: InsertStage1 (only .values()) → InsertBuilder
 // -----------------------------------------------------------------------
 
+/** First phase: only .values() is available. Prevents .toSQL()/.execute() before supplying a row. */
+export interface InsertStage1<T extends TableDef<any>> {
+  values(row: InferRow<T>): InsertBuilder<T>;
+}
+
+/** Lightweight wrapper that only exposes .values(). */
+export class InsertValuesBuilder<T extends TableDef<any>> implements InsertStage1<T> {
+  #client: DatabaseClient;
+  #tableName: string;
+  #table: T;
+
+  constructor(client: DatabaseClient, tableName: string, table: T) {
+    this.#client = client;
+    this.#tableName = tableName;
+    this.#table = table;
+  }
+
+  values(row: InferRow<T>): InsertBuilder<T> {
+    return new InsertBuilder(this.#client, this.#tableName, this.#table, row);
+  }
+}
+
+/** Full INSERT builder — available after .values() has been called. */
 export class InsertBuilder<T extends TableDef<any>> implements Executable {
   #client: DatabaseClient;
   #tableName: string;
   #table: T;
-  #row: InferRow<T> | undefined;
+  #row: InferRow<T>;
 
-  constructor(client: DatabaseClient, tableName: string, table: T, row?: InferRow<T>) {
+  constructor(client: DatabaseClient, tableName: string, table: T, row: InferRow<T>) {
     this.#client = client;
     this.#tableName = tableName;
     this.#table = table;
     this.#row = row;
   }
 
-  values(row: InferRow<T>): InsertBuilder<T> {
-    return new InsertBuilder(this.#client, this.#tableName, this.#table, row);
-  }
-
   toSQL(): { sql: string; params: unknown[] } {
-    if (!this.#row) throw new Error("Missing .values() call");
     const entries = columnEntries(this.#table as any);
     const names = entries.map(([, c]) => c.name).join(", ");
     const placeholders = entries.map(() => "?").join(", ");
@@ -159,9 +177,32 @@ export class InsertBuilder<T extends TableDef<any>> implements Executable {
 }
 
 // -----------------------------------------------------------------------
-// UPDATE
+// UPDATE — two-phase: UpdateStage1 (only .set()) → UpdateBuilder
 // -----------------------------------------------------------------------
 
+/** First phase: only .set() is available. Prevents .toSQL()/.execute() before supplying values. */
+export interface UpdateStage1<T extends TableDef<any>> {
+  set(partial: Partial<InferRow<T>>): UpdateBuilder<T>;
+}
+
+/** Lightweight wrapper that only exposes .set(). */
+export class UpdateSetBuilder<T extends TableDef<any>> implements UpdateStage1<T> {
+  #client: DatabaseClient;
+  #tableName: string;
+  #table: T;
+
+  constructor(client: DatabaseClient, tableName: string, table: T) {
+    this.#client = client;
+    this.#tableName = tableName;
+    this.#table = table;
+  }
+
+  set(partial: Partial<InferRow<T>>): UpdateBuilder<T> {
+    return new UpdateBuilder(this.#client, this.#tableName, this.#table, partial);
+  }
+}
+
+/** Full UPDATE builder — available after .set() has been called. */
 export class UpdateBuilder<T extends TableDef<any>> implements Executable {
   #client: DatabaseClient;
   #tableName: string;
@@ -173,7 +214,7 @@ export class UpdateBuilder<T extends TableDef<any>> implements Executable {
     client: DatabaseClient,
     tableName: string,
     table: T,
-    set: Partial<InferRow<T>> = {},
+    set: Partial<InferRow<T>>,
     conditions: Condition[] = [],
   ) {
     this.#client = client;
@@ -199,7 +240,6 @@ export class UpdateBuilder<T extends TableDef<any>> implements Executable {
       setClauses.push(`${col.name} = ?`);
       params.push(col.__internal.encode((this.#set as any)[key]));
     }
-    if (setClauses.length === 0) throw new Error("Missing .set() call");
     let sql = `UPDATE ${this.#tableName} SET ${setClauses.join(", ")}`;
     const where = compileConditions(this.#conditions, params);
     if (where !== "1=1") sql += ` WHERE ${where}`;
