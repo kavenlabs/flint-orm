@@ -4,12 +4,20 @@
 // -----------------------------------------------------------------------
 
 import { Database } from "bun:sqlite";
-import { SelectFromBuilder, InsertBuilder, UpdateBuilder, DeleteBuilder } from "./query/builder";
-import type { Executable, SelectStage1 } from "./query/builder";
+import {
+  SelectFromBuilder,
+  InsertBuilder,
+  UpdateBuilder,
+  DeleteBuilder,
+  JoinStage1,
+} from "./query/builder";
+import type { Executable, SelectStage1, JoinSelectStage1 } from "./query/builder";
 import type { TableDef } from "./schema/table";
 
 // Re-export Executable so consumers can type their own batch helpers.
-export type { Executable } from "./query/builder";
+export type { Executable, SelectStage1, JoinSelectStage1 } from "./query/builder";
+export { JoinSelectBuilder } from "./query/builder";
+export type { JoinResult } from "./query/builder";
 
 // -----------------------------------------------------------------------
 // Connection details
@@ -43,6 +51,22 @@ export function flint(details: ConnectionDetails) {
 
     /** Start a DELETE — call .where(condition) next. */
     delete: <T extends TableDef<any>>(table: T) => new DeleteBuilder<T>(client, (table as any)._.name, table),
+
+    /**
+     * LEFT JOIN — call .on(condition) next.
+     * Returns rows from the left table, with matching right table data
+     * (or null values if no match). One-to-many produces nested arrays.
+     */
+    leftJoin: <Parent extends TableDef<any>>(parent: Parent): JoinSelectStage1<Parent> =>
+      new JoinStage1(client, parent, (parent as any)._.name, "left"),
+
+    /**
+     * INNER JOIN — call .on(condition) next.
+     * Returns only rows where both tables have matching data.
+     * One-to-many produces nested arrays.
+     */
+    innerJoin: <Parent extends TableDef<any>>(parent: Parent): JoinSelectStage1<Parent> =>
+      new JoinStage1(client, parent, (parent as any)._.name, "inner"),
 
     /**
      * Run multiple queries atomically in a single transaction.

@@ -1,7 +1,7 @@
-// ---------------------------------------------------------------------------
+// -----------------------------------------------------------------------
 // Column definitions — each named function returns an immutable ColumnDef
 // with chainable modifiers. Internal details live under __internal.
-// ---------------------------------------------------------------------------
+// -----------------------------------------------------------------------
 
 /**
  * Column definition — the public shape consumers interact with.
@@ -28,12 +28,14 @@ export interface ColumnDef<T, S extends string = string> {
     readonly encode: (value: T) => unknown;
     /** Converts storage value → logical value. Called by the builder. */
     readonly decode: (value: unknown) => T;
+    /** Table name — set by table() when the column is attached. Used for join disambiguation. */
+    readonly tableName: string | null;
   };
 }
 
-// ---------------------------------------------------------------------------
+// -----------------------------------------------------------------------
 // Internal builder
-// ---------------------------------------------------------------------------
+// -----------------------------------------------------------------------
 
 function makeColumn<T, S extends string>(config: {
   name: string;
@@ -51,6 +53,7 @@ function makeColumn<T, S extends string>(config: {
       isUnique: false,
       encode: config.encode,
       decode: config.decode,
+      tableName: null as string | null,
     },
   };
 
@@ -70,9 +73,9 @@ function makeColumn<T, S extends string>(config: {
   return col;
 }
 
-// ---------------------------------------------------------------------------
+// -----------------------------------------------------------------------
 // Public column constructors
-// ---------------------------------------------------------------------------
+// -----------------------------------------------------------------------
 
 export function text(name: string): ColumnDef<string, "text"> {
   return makeColumn({
