@@ -8,6 +8,11 @@ import type { ColumnDef } from "../schema/columns";
 export type Condition =
   | { type: "eq"; column: ColumnDef<any, any>; value: unknown }
   | { type: "eqColumn"; left: ColumnDef<any, any>; right: ColumnDef<any, any> }
+  | { type: "gt"; column: ColumnDef<any, any>; value: unknown }
+  | { type: "gte"; column: ColumnDef<any, any>; value: unknown }
+  | { type: "lt"; column: ColumnDef<any, any>; value: unknown }
+  | { type: "lte"; column: ColumnDef<any, any>; value: unknown }
+  | { type: "neq"; column: ColumnDef<any, any>; value: unknown }
   | { type: "in"; column: ColumnDef<any, any>; values: unknown[] }
   | { type: "notIn"; column: ColumnDef<any, any>; values: unknown[] }
   | { type: "isNull"; column: ColumnDef<any, any> }
@@ -90,6 +95,31 @@ export function between<T>(column: ColumnDef<T, any>, low: T, high: T): Conditio
   return { type: "between", column, low, high };
 }
 
+/** Greater than — column > value. */
+export function gt<T>(column: ColumnDef<T, any>, value: T): Condition {
+  return { type: "gt", column, value };
+}
+
+/** Greater than or equal — column >= value. */
+export function gte<T>(column: ColumnDef<T, any>, value: T): Condition {
+  return { type: "gte", column, value };
+}
+
+/** Less than — column < value. */
+export function lt<T>(column: ColumnDef<T, any>, value: T): Condition {
+  return { type: "lt", column, value };
+}
+
+/** Less than or equal — column <= value. */
+export function lte<T>(column: ColumnDef<T, any>, value: T): Condition {
+  return { type: "lte", column, value };
+}
+
+/** Not equal — column != value. */
+export function neq<T>(column: ColumnDef<T, any>, value: T): Condition {
+  return { type: "neq", column, value };
+}
+
 // -----------------------------------------------------------------------
 // Internal: compile a Condition tree to a SQL fragment + params array.
 // Encode is applied to every value at this single chokepoint.
@@ -138,6 +168,21 @@ export function compileCondition(
       params.push(cond.column.__internal.encode(cond.low));
       params.push(cond.column.__internal.encode(cond.high));
       return `${cond.column.name} BETWEEN ? AND ?`;
+    case "gt":
+      params.push(cond.column.__internal.encode(cond.value));
+      return `${cond.column.name} > ?`;
+    case "gte":
+      params.push(cond.column.__internal.encode(cond.value));
+      return `${cond.column.name} >= ?`;
+    case "lt":
+      params.push(cond.column.__internal.encode(cond.value));
+      return `${cond.column.name} < ?`;
+    case "lte":
+      params.push(cond.column.__internal.encode(cond.value));
+      return `${cond.column.name} <= ?`;
+    case "neq":
+      params.push(cond.column.__internal.encode(cond.value));
+      return `${cond.column.name} != ?`;
     case "and":
       return cond.conditions
         .map((c) => compileCondition(c, params))

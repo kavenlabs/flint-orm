@@ -5,7 +5,7 @@
 // -----------------------------------------------------------------------
 
 import { flint } from "./flint";
-import { eq, and, isNotNull, like, glob, between } from "./query/conditions";
+import { eq, and, isNotNull, like, glob, between, gt, gte, lt, lte, neq } from "./query/conditions";
 import { text, boolean, json, integer, date } from "./schema/columns";
 import { table } from "./schema/table";
 import { ValidationError } from "./errors";
@@ -593,6 +593,41 @@ const [count2, sum2, avg2] = await Promise.all([
 ]);
 console.log("Promise.all:", { count: count2, sum: sum2, avg: avg2 });
 // Should be: { count: 5, sum: 500, avg: 100 }
+
+console.log();
+
+// ── FEATURE 10: comparison operators ───────────────────────────────────────
+
+console.log("── comparison operators ──");
+
+// gt — orders with total > 100
+const gtResult = db.select().from(orders).where(gt(orders.total, 100)).execute();
+console.log("gt(total, 100):", gtResult.map((r) => ({ id: r.id, total: r.total })));
+// Should be: o2 (250)
+
+// gte — orders with total >= 100
+const gteResult = db.select().from(orders).where(gte(orders.total, 100)).execute();
+console.log("gte(total, 100):", gteResult.map((r) => ({ id: r.id, total: r.total })));
+// Should be: o1 (100), o2 (250)
+
+// lt — orders with total < 100
+const ltResult = db.select().from(orders).where(lt(orders.total, 100)).execute();
+console.log("lt(total, 100):", ltResult.map((r) => ({ id: r.id, total: r.total })));
+// Should be: o3 (0), o4 (50), o5 (75)
+
+// lte — orders with total <= 100
+const lteResult = db.select().from(orders).where(lte(orders.total, 100)).execute();
+console.log("lte(total, 100):", lteResult.map((r) => ({ id: r.id, total: r.total })));
+// Should be: o1 (100), o3 (0), o4 (50), o5 (75)
+
+// neq — orders with total != 100
+const neqResult = db.select().from(orders).where(neq(orders.total, 100)).execute();
+console.log("neq(total, 100):", neqResult.map((r) => ({ id: r.id, total: r.total })));
+// Should be: o2 (250), o3 (0), o4 (50), o5 (75)
+
+// toSQL examples
+console.log("gt SQL:", db.select().from(orders).where(gt(orders.total, 100)).toSQL());
+console.log("neq SQL:", db.select().from(orders).where(neq(orders.total, 100)).toSQL());
 
 console.log();
 
