@@ -74,3 +74,67 @@ export type InferRow<T extends TableDef<any>> = {
     ? T[K]["__internal"]["_type"]
     : never;
 };
+
+// -----------------------------------------------------------------------
+// snakeCase helper — auto-converts camelCase keys to snake_case SQL names
+// -----------------------------------------------------------------------
+
+/** Convert camelCase to snake_case. */
+function toSnakeCase(str: string): string {
+  return str.replace(/[A-Z]/g, (letter) => `_${letter.toLowerCase()}`);
+}
+
+/**
+ * Define a table with auto snake_case column names.
+ * Column names are inferred from object keys and converted to snake_case.
+ * Column constructors (text(), integer(), etc.) can be called without a name.
+ */
+export function snakeCaseTable<T extends Record<string, ColumnDef<any, any>>>(
+  tableName: string,
+  columns: T,
+): TableDef<T> {
+  // Create a new object with snake_case names stamped onto each column
+  const converted: Record<string, ColumnDef<any, any>> = {};
+  for (const [key, col] of Object.entries(columns)) {
+    const sqlName = toSnakeCase(key);
+    // If the column has no name (empty string), use the snake_case key
+    const columnName = col.name || sqlName;
+    const stampedInternal = { ...col.__internal, name: columnName, tableName };
+    const stampedCol: ColumnDef<any, any> = {
+      name: columnName,
+      __internal: stampedInternal,
+      primaryKey() {
+        return { ...this, __internal: { ...stampedInternal, isPrimaryKey: true } };
+      },
+      notNull() {
+        return { ...this, __internal: { ...stampedInternal, isNotNull: true } };
+      },
+      unique() {
+        return { ...this, __internal: { ...stampedInternal, isUnique: true } };
+      },
+      default(value: any) {
+        return { ...this, __internal: { ...stampedInternal, hasDefault: true, defaultValue: value } };
+      },
+      defaultFn(fn: () => any) {
+        return { ...this, __internal: { ...stampedInternal, hasDefault: true, defaultFn: fn } };
+      },
+    } as ColumnDef<any, any>;
+
+    if ("autoIncrement" in col) {
+      (stampedCol as any).autoIncrement = function () {
+        return { ...this, __internal: { ...stampedInternal, isAutoIncrement: true } };
+      };
+    }
+
+    converted[key] = stampedCol;
+  }
+
+  return table(tableName, converted as T);
+}
+
+/**
+ * snakeCase namespace — provides snakeCase.table() for auto snake_case column names.
+ */
+export const snakeCase = {
+  table: snakeCaseTable,
+};

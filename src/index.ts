@@ -9,7 +9,7 @@ export type { ConnectionDetails, SQLExpression, Executable, SelectStage1, JoinSe
 // Schema: table/column definitions (flint-orm/table)
 export { text, integer, boolean, json, real } from "./schema/columns";
 export type { ColumnDef } from "./schema/columns";
-export { table } from "./schema/table";
+export { table, snakeCase } from "./schema/table";
 export type { InferRow, TableDef } from "./schema/table";
 
 // Conditions: eq, and, or (flint-orm/conditions)

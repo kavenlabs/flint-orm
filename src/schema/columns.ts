@@ -106,18 +106,18 @@ function makeColumn<T, S extends string>(config: {
 // Public column constructors
 // -----------------------------------------------------------------------
 
-export function text(name: string): ColumnDef<string, "text"> {
+export function text(name?: string): ColumnDef<string, "text"> {
   return makeColumn({
-    name,
+    name: name ?? "",
     sqlType: "text",
     encode: (v) => v,
     decode: (v) => (v == null ? (null as unknown as string) : (v as string)),
   });
 }
 
-export function integer(name: string): IntegerColumnDef<"integer"> {
+export function integer(name?: string): IntegerColumnDef<"integer"> {
   const base = makeColumn<number, "integer">({
-    name,
+    name: name ?? "",
     sqlType: "integer",
     encode: (v) => v,
     decode: (v) => (v == null ? (null as unknown as number) : Number(v)),
@@ -149,9 +149,9 @@ export function integer(name: string): IntegerColumnDef<"integer"> {
 }
 
 /** Stores 0/1 in SQLite, exposes boolean in TS. */
-export function boolean(name: string): ColumnDef<boolean, "integer"> {
+export function boolean(name?: string): ColumnDef<boolean, "integer"> {
   return makeColumn({
-    name,
+    name: name ?? "",
     sqlType: "integer",
     encode: (v) => (v ? 1 : 0),
     decode: (v) => (v == null ? (null as unknown as boolean) : Boolean(v)),
@@ -159,9 +159,9 @@ export function boolean(name: string): ColumnDef<boolean, "integer"> {
 }
 
 /** Stores JSON text in SQLite, exposes T in TS. */
-export function json<T>(name: string): ColumnDef<T, "text"> {
+export function json<T>(name?: string): ColumnDef<T, "text"> {
   return makeColumn({
-    name,
+    name: name ?? "",
     sqlType: "text",
     encode: (v) => (v == null ? null : JSON.stringify(v)),
     decode: (v) =>
@@ -169,9 +169,9 @@ export function json<T>(name: string): ColumnDef<T, "text"> {
   });
 }
 
-export function real(name: string): ColumnDef<number, "real"> {
+export function real(name?: string): ColumnDef<number, "real"> {
   return makeColumn({
-    name,
+    name: name ?? "",
     sqlType: "real",
     encode: (v) => v,
     decode: (v) => (v == null ? (null as unknown as number) : Number(v)),
