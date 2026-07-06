@@ -636,14 +636,14 @@ console.log();
 console.log("── on conflict ──");
 
 // Insert a user
-db.insert(users).values({ id: "u10", name: "TestUser", active: true }).execute();
+db.insert(users).values({ id: "u10", name: "TestUser", active: true, metadata: null as any }).execute();
 const u10Before = db.select().from(users).where(eq(users.id, "u10")).single().execute();
 console.log("u10 before:", u10Before?.name);
 // Should be: TestUser
 
 // Try to insert same id with onConflictDoNothing — should be ignored
 db.insert(users)
-  .values({ id: "u10", name: "ShouldNotAppear", active: false })
+  .values({ id: "u10", name: "ShouldNotAppear", active: false, metadata: null as any })
   .onConflictDoNothing()
   .execute();
 const u10AfterNothing = db.select().from(users).where(eq(users.id, "u10")).single().execute();
@@ -652,7 +652,7 @@ console.log("u10 after doNothing:", u10AfterNothing?.name);
 
 // Try to insert same id with onConflictDoUpdate — should update name
 db.insert(users)
-  .values({ id: "u10", name: "UpdatedUser", active: true })
+  .values({ id: "u10", name: "UpdatedUser", active: true, metadata: null as any })
   .onConflictDoUpdate({
     target: users.id,
     set: { name: "UpdatedUser" },
@@ -663,8 +663,28 @@ console.log("u10 after doUpdate:", u10AfterUpdate?.name);
 // Should be: UpdatedUser
 
 // toSQL examples
-console.log("doNothing SQL:", db.insert(users).values({ id: "u99", name: "x", active: true }).onConflictDoNothing().toSQL());
-console.log("doUpdate SQL:", db.insert(users).values({ id: "u99", name: "x", active: true }).onConflictDoUpdate({ target: users.id, set: { name: "x" } }).toSQL());
+console.log("doNothing SQL:", db.insert(users).values({ id: "u99", name: "x", active: true, metadata: null as any }).onConflictDoNothing().toSQL());
+console.log("doUpdate SQL:", db.insert(users).values({ id: "u99", name: "x", active: true, metadata: null as any }).onConflictDoUpdate({ target: users.id, set: { name: "x" } }).toSQL());
+
+console.log();
+
+// ── FEATURE 12: db.raw ────────────────────────────────────────────────────
+
+console.log("── db.raw ──");
+
+// Raw query with params
+const rawResult = db.raw<{ id: string; name: string }>("SELECT id, name FROM users WHERE id = ?", ["u10"]);
+console.log("raw query:", rawResult);
+// Should be: [{ id: "u10", name: "UpdatedUser" }]
+
+// Raw aggregate
+const rawCount = db.raw<{ cnt: number }>("SELECT count(*) as cnt FROM users");
+console.log("raw count:", rawCount[0]?.cnt);
+// Should be: number of users
+
+// Raw with no params
+const rawAll = db.raw<{ id: string }>("SELECT id FROM users ORDER BY id");
+console.log("raw all ids:", rawAll.map((r) => r.id));
 
 console.log();
 

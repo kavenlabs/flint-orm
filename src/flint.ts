@@ -114,6 +114,18 @@ export function flint(details: ConnectionDetails) {
     max: <T extends TableDef<any>, C extends ColumnDef<any, any>>(table: T, column: C, condition?: Condition) =>
       max(client, table, column, condition),
 
+    /**
+     * Execute raw SQL directly.
+     * Returns all matching rows as plain objects.
+     *
+     * @example
+     * db.raw("SELECT * FROM users WHERE id = ?", ["u1"])
+     * db.raw("SELECT count(*) as cnt FROM users")
+     */
+    raw: <T = Record<string, unknown>>(sql: string, params?: unknown[]): T[] => {
+      return client.prepare(sql).all(...(params ?? []) as any) as T[];
+    },
+
     /** Direct access to the underlying client (escape hatch). */
     $client: client,
   };
