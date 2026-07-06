@@ -1,10 +1,4 @@
-// -----------------------------------------------------------------------
-// Query builders — immutable, chainable, parameterized.
-// Every value passes through column.__internal.encode() on the way in,
-// and column.__internal.decode() on the way out, at a single chokepoint each.
-// Builders receive `client` at construction — .execute() takes no arguments.
-// -----------------------------------------------------------------------
-
+// Query builders
 import type { SQLQueryBindings } from "bun:sqlite";
 import type { ColumnDef } from "../schema/columns";
 import type { Condition } from "./conditions";
@@ -12,28 +6,25 @@ import { compileConditions, eq } from "./conditions";
 import type { TableDef, AnyTable, InferRow, InsertRow } from "../schema/table";
 import { FlintValidationError, FlintQueryError } from "../errors";
 
-// -----------------------------------------------------------------------
-// Shared helpers
-// -----------------------------------------------------------------------
-
-/** Cast params array to what bun:sqlite expects. */
+// @internal Shared helpers
+/** @internal Cast params array to what bun:sqlite expects. */
 function bind(params: unknown[]): SQLQueryBindings[] {
   return params as SQLQueryBindings[];
 }
 
-/** Get a column by key from a table definition. */
+/** @internal Get a column by key from a table definition. */
 function getCol(tbl: AnyTable, key: string): ColumnDef<any, any> {
   const col = (tbl as Record<string, ColumnDef<any, any>>)[key];
   if (!col) throw new FlintValidationError(`Column "${key}" not found in table`);
   return col;
 }
 
-/** Get column entries from a table (filters out the `._` metadata prop). */
+/** @internal Get column entries from a table (filters out `._`). */
 function columnEntries(tbl: AnyTable): [string, ColumnDef<any, any>][] {
   return Object.entries(tbl).filter(([k]) => k !== "_") as [string, ColumnDef<any, any>][];
 }
 
-/** Decode a raw SQLite row into the full logical TS shape. */
+/** @internal Decode a raw SQLite row into the full logical TS shape. */
 function decodeRow<T extends AnyTable>(raw: Record<string, unknown>, tbl: T): InferRow<T> {
   const out: Record<string, unknown> = {};
   for (const [key, col] of columnEntries(tbl)) {
@@ -43,7 +34,7 @@ function decodeRow<T extends AnyTable>(raw: Record<string, unknown>, tbl: T): In
   return out as InferRow<T>;
 }
 
-/** Decode a raw row for only the specified columns (column selection). */
+/** @internal Decode a raw row for only the specified columns. */
 function decodeSelectedRow<T extends AnyTable, C extends keyof InferRow<T>>(
   raw: Record<string, unknown>,
   tbl: T,
@@ -58,7 +49,7 @@ function decodeSelectedRow<T extends AnyTable, C extends keyof InferRow<T>>(
   return out as Pick<InferRow<T>, C>;
 }
 
-/** Find the primary key TS key of a table. */
+/** @internal Find the primary key TS key of a table. */
 function findPKKey(tbl: AnyTable): string {
   for (const [key, col] of columnEntries(tbl)) {
     if (col.__internal.isPrimaryKey) return key;
@@ -66,11 +57,7 @@ function findPKKey(tbl: AnyTable): string {
   throw new FlintValidationError("Table has no primary key column");
 }
 
-/**
- * Resolve a join condition from foreign key references.
- * Scans the child table for columns that reference the parent table.
- * Returns the first matching condition.
- */
+/** @internal Resolve a join condition from foreign key references. */
 function resolveForeignKeyCondition(
   parent: AnyTable,
   parentName: string,
@@ -94,10 +81,7 @@ function resolveForeignKeyCondition(
   );
 }
 
-/**
- * Extract all column references from a condition tree.
- * Used for runtime validation of column ownership.
- */
+/** @internal Extract all column references from a condition tree. */
 function extractColumns(cond: Condition): ColumnDef<any, any>[] {
   switch (cond.type) {
     case "eq":
@@ -120,10 +104,7 @@ function extractColumns(cond: Condition): ColumnDef<any, any>[] {
   }
 }
 
-/**
- * Validate that all columns in conditions belong to the allowed tables.
- * Checks object identity — the column must be the exact same object from the table definition.
- */
+/** @internal Validate that all columns in conditions belong to the allowed tables. */
 function validateColumnOwnership(
   conditions: Condition[],
   allowedTables: AnyTable[],
@@ -145,7 +126,7 @@ function validateColumnOwnership(
   }
 }
 
-/** Resolve column list SQL from selected columns or all entries. */
+/** @internal Resolve column list SQL from selected columns or all entries. */
 function resolveColumns<T extends AnyTable>(
   table: T,
   selectedColumns: string[] | null,
@@ -163,19 +144,12 @@ function resolveColumns<T extends AnyTable>(
   return entries.map(([, c]) => (prefix ? `${prefix}.${c.name}` : c.name)).join(", ");
 }
 
-// -----------------------------------------------------------------------
-// Executable — structural type for anything that can produce SQL.
-// batch() uses this so it's not tied to any specific builder class.
-// -----------------------------------------------------------------------
-
+/** Anything that can produce SQL — used by `db.batch()`. */
 export interface Executable {
   toSQL(): { sql: string; params: unknown[] };
 }
 
-// -----------------------------------------------------------------------
-// Client type — anything that can run SQL
-// -----------------------------------------------------------------------
-
+/** @internal Anything that can run SQL. */
 export interface DatabaseClient {
   prepare(sql: string): {
     all(...params: SQLQueryBindings[]): unknown[];
@@ -184,22 +158,16 @@ export interface DatabaseClient {
   };
 }
 
-// -----------------------------------------------------------------------
-// Join types
-// -----------------------------------------------------------------------
-
+/** @internal */
 type JoinType = "left" | "inner";
 
-// -----------------------------------------------------------------------
-// SELECT — two-phase: SelectStage1 → SelectBuilder
-// -----------------------------------------------------------------------
-
-/** Phase 1: only .from() is available. */
+// SELECT builders
+/** Phase 1 of a SELECT — only `.from()` is available. */
 export interface SelectStage1 {
   from<U extends AnyTable>(table: U): SelectBuilder<U>;
 }
 
-/** Lightweight wrapper that only exposes .from(). */
+/** @internal Lightweight wrapper that only exposes `.from()`. */
 export class SelectFromBuilder implements SelectStage1 {
   #client: DatabaseClient;
   #conditions: Condition[];
@@ -214,13 +182,7 @@ export class SelectFromBuilder implements SelectStage1 {
   }
 }
 
-/**
- * Full SELECT builder — available after .from().
- *
- * C tracks which columns are selected:
- * - Default: keyof InferRow<T> (all columns)
- * - After .columns(): the narrowed Pick type
- */
+/** Full SELECT builder — available after `.from()`. */
 export class SelectBuilder<
   T extends AnyTable,
   C extends keyof InferRow<T> = keyof InferRow<T>,
@@ -257,6 +219,7 @@ export class SelectBuilder<
     this.#distinct = distinct;
   }
 
+  /** Add a WHERE condition. Multiple calls stack. */
   where(condition: Condition): SelectBuilder<T, C> {
     return new SelectBuilder(
       this.#client,
@@ -273,7 +236,9 @@ export class SelectBuilder<
 
   /**
    * Narrow which columns appear in the result.
-   * Each string must be a real key on the table.
+   *
+   * @example
+   * db.select().from(users).columns(["id", "name"])
    */
   columns<K extends keyof InferRow<T>>(keys: K[]): SelectBuilder<T, K> {
     return new SelectBuilder(
@@ -289,10 +254,7 @@ export class SelectBuilder<
     );
   }
 
-  /**
-   * Return a single row or null instead of an array.
-   * Adds LIMIT 1 to the SQL.
-   */
+  /** Return a single row or null instead of an array. Adds `LIMIT 1` to the SQL. */
   single(): SingleSelectBuilder<T, C> {
     return new SingleSelectBuilder(
       this.#client,
@@ -306,9 +268,7 @@ export class SelectBuilder<
     );
   }
 
-  /**
-   * Return only distinct (unique) rows.
-   */
+  /** Return only distinct (unique) rows. */
   distinct(): SelectBuilder<T, C> {
     return new SelectBuilder(
       this.#client,
@@ -325,8 +285,9 @@ export class SelectBuilder<
 
   /**
    * Add an ORDER BY clause. Multiple calls stack.
-   * @param key - Column key to sort by (e.g. "name")
-   * @param direction - "asc" or "desc" (default: "asc")
+   *
+   * @example
+   * db.select().from(users).orderBy("name", "desc")
    */
   orderBy<K extends keyof InferRow<T>>(
     key: K,
@@ -346,10 +307,7 @@ export class SelectBuilder<
     );
   }
 
-  /**
-   * Limit the number of results.
-   * @param n - Maximum number of rows to return
-   */
+  /** Limit the number of results. */
   limit(n: number): SelectBuilder<T, C> {
     return new SelectBuilder(
       this.#client,
@@ -364,10 +322,7 @@ export class SelectBuilder<
     );
   }
 
-  /**
-   * Skip N rows before returning results.
-   * @param n - Number of rows to skip
-   */
+  /** Skip N rows before returning results. */
   offset(n: number): SelectBuilder<T, C> {
     return new SelectBuilder(
       this.#client,
@@ -415,10 +370,7 @@ export class SelectBuilder<
   }
 }
 
-// -----------------------------------------------------------------------
-// Single-row SELECT builder — after .single() has been called
-// -----------------------------------------------------------------------
-
+/** @internal Single-row SELECT builder — after `.single()` has been called. */
 export class SingleSelectBuilder<
   T extends AnyTable,
   C extends keyof InferRow<T> = keyof InferRow<T>,
@@ -514,7 +466,7 @@ export class SingleSelectBuilder<
     return { sql, params };
   }
 
-  /** Returns a single row or null — never throws on empty results. */
+  /** Returns a single row or null, never throws on empty results. */
   execute(): Pick<InferRow<T>, C> | null {
     const { sql, params } = this.toSQL();
     try {
@@ -531,32 +483,22 @@ export class SingleSelectBuilder<
   }
 }
 
-// -----------------------------------------------------------------------
-// JOIN — two-phase: JoinSelectStage1 → JoinBuilder
-// -----------------------------------------------------------------------
-
-/** Description of a single JOIN clause. */
+// JOIN builders
+/** @internal Description of a single JOIN clause. */
 interface JoinClause {
   table: AnyTable;
   name: string;
   condition: Condition;
 }
 
-/**
- * Phase 1: only .on(child, condition) is available after db.leftJoin().
- * .on() takes both the child table AND the join condition in one call.
- * Chain multiple .on() calls for multiple joins.
- */
+/** Phase 1 of a JOIN — only `.on()` is available. */
 export interface JoinSelectStage1<Parent extends AnyTable> {
   on<Child extends AnyTable>(child: Child, condition: Condition): JoinBuilder<Parent, [Child]>;
-  /** Auto-join: infer condition from foreign key references on the child table. */
+  /** Auto-join: infer condition from foreign key references. */
   on<Child extends AnyTable>(child: Child): JoinBuilder<Parent, [Child]>;
 }
 
-/**
- * Full join builder — chain more .on() calls or call .execute().
- * .on(child, condition) adds another join.
- */
+/** Full join builder — chain more `.on()` calls or call `.execute()`. */
 export interface JoinBuilder<
   Parent extends AnyTable,
   Joined extends AnyTable[],
@@ -566,7 +508,7 @@ export interface JoinBuilder<
     child: NewChild,
     condition: Condition,
   ): JoinBuilder<Parent, [...Joined, NewChild], ParentCols>;
-  /** Auto-join: infer condition from foreign key references on the child table. */
+  /** Auto-join: infer condition from foreign key references. */
   on<NewChild extends AnyTable>(
     child: NewChild,
   ): JoinBuilder<Parent, [...Joined, NewChild], ParentCols>;
@@ -583,7 +525,7 @@ export interface JoinBuilder<
   execute(): JoinResult<Parent, Joined, ParentCols>[];
 }
 
-/** Single-row join builder — after .single() on a JoinBuilder. */
+/** @internal Single-row join builder — after `.single()` on a JoinBuilder. */
 export interface SingleJoinBuilder<
   Parent extends AnyTable,
   Joined extends AnyTable[],
@@ -599,10 +541,7 @@ export interface SingleJoinBuilder<
   execute(): JoinResult<Parent, Joined, ParentCols> | null;
 }
 
-/**
- * Implementation of JoinSelectStage1 — only .on(child, condition) is available.
- * This is what db.leftJoin() returns.
- */
+/** @internal Implementation of JoinSelectStage1. */
 export class JoinStage1<Parent extends AnyTable> implements JoinSelectStage1<Parent> {
   #client: DatabaseClient;
   #parent: Parent;
@@ -617,8 +556,10 @@ export class JoinStage1<Parent extends AnyTable> implements JoinSelectStage1<Par
   }
 
   /**
-   * Add a join. Takes both the child table AND the join condition.
-   * Returns a builder that allows chaining more .on() calls.
+   * Add a join. Provide an explicit condition or auto-infer from foreign keys.
+   *
+   * @example
+   * db.leftJoin(users).on(posts, eq(posts.userId, users.id))
    */
   on<Child extends AnyTable>(
     child: Child,
@@ -636,12 +577,7 @@ export class JoinStage1<Parent extends AnyTable> implements JoinSelectStage1<Par
   }
 }
 
-/**
- * Full JOIN builder — chains .on(child, condition) calls, executes with nested results.
- *
- * One-to-many joins produce nested results: the parent row appears once
- * with each joined table's data under its table name as key.
- */
+/** @internal Full JOIN builder — chains `.on()` calls, executes with nested results. */
 export class JoinBuilderImpl<
   Parent extends AnyTable,
   Joined extends AnyTable[],
@@ -683,8 +619,7 @@ export class JoinBuilderImpl<
   }
 
   /**
-   * Add another join. Takes both the child table AND the join condition.
-   * Returns a new builder with the accumulated joins.
+   * Add another join. Provide an explicit condition or auto-infer from foreign keys.
    */
   on<NewChild extends AnyTable>(
     child: NewChild,
@@ -921,21 +856,14 @@ export class JoinBuilderImpl<
   }
 }
 
-/**
- * Result type for joined queries.
- * Parent fields are Pick'd if .columns() was used.
- * Each joined table's data is nested under its table name as an array.
- */
+/** The result type for joined queries. Parent fields are narrowed by `.columns()`; each joined table's data is nested under its table name. */
 export type JoinResult<
   Parent extends AnyTable,
   Joined extends AnyTable[],
   ParentCols extends keyof InferRow<Parent> = keyof InferRow<Parent>,
 > = Pick<InferRow<Parent>, ParentCols> & Record<string, unknown>;
 
-// -----------------------------------------------------------------------
-// Single-row JOIN builder — after .single() on a JoinBuilder
-// -----------------------------------------------------------------------
-
+/** @internal Single-row join builder implementation. */
 export class SingleJoinBuilderImpl<
   Parent extends AnyTable,
   Joined extends AnyTable[],
@@ -1061,7 +989,7 @@ export class SingleJoinBuilderImpl<
     return { sql, params: [...joinParams, ...whereParams] };
   }
 
-  /** Returns a single parent with nested children, or null. */
+  /** @internal Returns a single parent with nested children, or null. */
   execute(): JoinResult<Parent, Joined, ParentCols> | null {
     const { sql, params } = this.toSQL();
     try {
@@ -1138,16 +1066,12 @@ export class SingleJoinBuilderImpl<
   }
 }
 
-// -----------------------------------------------------------------------
-// INSERT — two-phase: InsertStage1 (only .values()) → InsertBuilder
-// -----------------------------------------------------------------------
-
-/** First phase: only .values() is available. Prevents .toSQL()/.execute() before supplying a row. */
+/** Phase 1 of an INSERT — only `.values()` is available. */
 export interface InsertStage1<T extends AnyTable> {
   values(row: InsertRow<T>): InsertBuilder<T>;
 }
 
-/** Lightweight wrapper that only exposes .values(). */
+/** @internal Lightweight wrapper that only exposes `.values()`. */
 export class InsertValuesBuilder<T extends AnyTable> implements InsertStage1<T> {
   #client: DatabaseClient;
   #tableName: string;
@@ -1164,7 +1088,7 @@ export class InsertValuesBuilder<T extends AnyTable> implements InsertStage1<T> 
   }
 }
 
-/** ON CONFLICT strategy type. */
+/** @internal ON CONFLICT strategy type. */
 type OnConflictDoNothing = { mode: "nothing" };
 type OnConflictDoUpdate<T extends AnyTable> = {
   mode: "update";
@@ -1173,7 +1097,7 @@ type OnConflictDoUpdate<T extends AnyTable> = {
 };
 type OnConflictStrategy<T extends AnyTable> = OnConflictDoNothing | OnConflictDoUpdate<T>;
 
-/** Full INSERT builder — available after .values() has been called. */
+/** Full INSERT builder — available after `.values()` has been called. */
 export class InsertBuilder<T extends AnyTable, R extends boolean = false> implements Executable {
   #client: DatabaseClient;
   #tableName: string;
@@ -1191,17 +1115,35 @@ export class InsertBuilder<T extends AnyTable, R extends boolean = false> implem
     this.#onConflict = onConflict;
   }
 
-  /** Return the inserted row(s) instead of void. */
+  /**
+   * Return the inserted row(s) instead of void.
+   *
+   * @example
+   * db.insert(users).values({ id: "u1", name: "Alice" }).returning()
+   */
   returning(): InsertBuilder<T, true> {
     return new InsertBuilder(this.#client, this.#tableName, this.#table, this.#row, true, this.#onConflict);
   }
 
-  /** On conflict, do nothing (ignore the insert). */
+  /**
+   * On conflict, do nothing (ignore the insert).
+   *
+   * @example
+   * db.insert(users).values(row).onConflictDoNothing()
+   */
   onConflictDoNothing(): InsertBuilder<T, R> {
     return new InsertBuilder(this.#client, this.#tableName, this.#table, this.#row, this.#returning as R, { mode: "nothing" });
   }
 
-  /** On conflict, update specified columns with the proposed values. */
+  /**
+   * On conflict, update specified columns with the proposed values.
+   *
+   * @example
+   * db.insert(users).values(row).onConflictDoUpdate({
+   *   target: users.id,
+   *   set: { name: "Alice" },
+   * })
+   */
   onConflictDoUpdate<C extends ColumnDef<any, any>>(
     options: { target: C | C[]; set: Partial<InferRow<T>> },
   ): InsertBuilder<T, R> {
@@ -1306,16 +1248,12 @@ export class InsertBuilder<T extends AnyTable, R extends boolean = false> implem
   }
 }
 
-// -----------------------------------------------------------------------
-// UPDATE — two-phase: UpdateStage1 (only .set()) → UpdateBuilder
-// -----------------------------------------------------------------------
-
-/** First phase: only .set() is available. Prevents .toSQL()/.execute() before supplying values. */
+/** Phase 1 of an UPDATE — only `.set()` is available. */
 export interface UpdateStage1<T extends AnyTable> {
   set(partial: Partial<InferRow<T>>): UpdateBuilder<T>;
 }
 
-/** Lightweight wrapper that only exposes .set(). */
+/** @internal Lightweight wrapper that only exposes `.set()`. */
 export class UpdateSetBuilder<T extends AnyTable> implements UpdateStage1<T> {
   #client: DatabaseClient;
   #tableName: string;
@@ -1332,7 +1270,7 @@ export class UpdateSetBuilder<T extends AnyTable> implements UpdateStage1<T> {
   }
 }
 
-/** Full UPDATE builder — available after .set() has been called. */
+/** Full UPDATE builder — available after `.set()` has been called. */
 export class UpdateBuilder<T extends AnyTable, R extends boolean = false> implements Executable {
   #client: DatabaseClient;
   #tableName: string;
@@ -1375,7 +1313,12 @@ export class UpdateBuilder<T extends AnyTable, R extends boolean = false> implem
     ], this.#returning);
   }
 
-  /** Return the updated row(s) instead of void. */
+  /**
+   * Return the updated row(s) instead of void.
+   *
+   * @example
+   * db.update(users).set({ name: "Bob" }).where(eq(users.id, "u1")).returning()
+   */
   returning(): UpdateBuilder<T, true> {
     return new UpdateBuilder(this.#client, this.#tableName, this.#table, this.#set, this.#conditions, true);
   }
@@ -1419,10 +1362,7 @@ export class UpdateBuilder<T extends AnyTable, R extends boolean = false> implem
   }
 }
 
-// -----------------------------------------------------------------------
-// DELETE
-// -----------------------------------------------------------------------
-
+/** Full DELETE builder — chain `.where()` calls then `.execute()`. */
 export class DeleteBuilder<T extends AnyTable, R extends boolean = false> implements Executable {
   #client: DatabaseClient;
   #tableName: string;
@@ -1445,7 +1385,12 @@ export class DeleteBuilder<T extends AnyTable, R extends boolean = false> implem
     ], this.#returning);
   }
 
-  /** Return the deleted row(s) instead of void. */
+  /**
+   * Return the deleted row(s) instead of void.
+   *
+   * @example
+   * db.delete(users).where(eq(users.id, "u1")).returning()
+   */
   returning(): DeleteBuilder<T, true> {
     return new DeleteBuilder(this.#client, this.#tableName, this.#table, this.#conditions, true);
   }

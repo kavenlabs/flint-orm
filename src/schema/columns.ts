@@ -1,26 +1,26 @@
-// -----------------------------------------------------------------------
-// Column definitions — each named function returns an immutable ColumnDef
-// with chainable modifiers. Internal details live under __internal.
-// -----------------------------------------------------------------------
-
+// Column definitions
 /**
- * Column definition — the public shape consumers interact with.
+ * A column definition with chainable modifiers.
  *
- * Only `name` and modifier methods are public. Everything else is under
- * `__internal` — the naming signals "don't touch this".
+ * @example
+ * const name = text("name").notNull().default("unnamed");
  */
 export interface ColumnDef<T, S extends string = string> {
   readonly name: string;
   primaryKey(): ColumnDef<T, S>;
   notNull(): ColumnDef<T, S>;
   unique(): ColumnDef<T, S>;
-  /** Set a static default value — used when value is undefined during INSERT. */
+  /** Set a static default value used when the value is omitted during insert. */
   default(value: T): ColumnDef<T, S>;
-  /** Set a dynamic default — called when value is undefined during INSERT. */
+  /** Set a dynamic default function called when the value is omitted during insert. */
   defaultFn(fn: () => T): ColumnDef<T, S>;
-  /** Define a foreign key reference to another table's column. */
+  /**
+   * Define a foreign key reference to another table's column.
+   *
+   * @example
+   * text("userId").references(users.id)
+   */
   references(target: ColumnDef<any, any>): ColumnDef<T, S>;
-  /** @internal Implementation details. Do not access directly. */
   readonly __internal: {
     /** Phantom — exists only at the type level, never accessed at runtime. */
     readonly _type: T;
@@ -48,31 +48,46 @@ export interface ColumnDef<T, S extends string = string> {
   };
 }
 
-/** Integer column with autoIncrement support. */
+/** An integer column definition with auto-increment support. */
 export interface IntegerColumnDef<S extends string = "integer"> extends ColumnDef<number, S> {
   primaryKey(): IntegerColumnDef<S>;
   notNull(): IntegerColumnDef<S>;
   unique(): IntegerColumnDef<S>;
   default(value: number): IntegerColumnDef<S>;
   defaultFn(fn: () => number): IntegerColumnDef<S>;
-  /** Mark as auto-increment (SQLite ROWID alias). Only available on integer columns. */
+  /**
+   * Mark as auto-increment (SQLite ROWID alias).
+   *
+   * @example
+   * const id = integer("id").primaryKey().autoIncrement();
+   */
   autoIncrement(): IntegerColumnDef<S>;
 }
 
-/** Date column — nullable in results unless defaultNow() is called. */
+/** A date column that stores a unix timestamp (milliseconds) in SQLite. Nullable in results unless `.defaultNow()` is called. */
 export interface DateColumnDef extends ColumnDef<Date, "integer"> {
   primaryKey(): DateColumnDef;
   notNull(): DateColumnDef;
   unique(): DateColumnDef;
   default(value: Date): DateColumnDef;
   defaultFn(fn: () => Date): DateColumnDef;
-  /** Use current Date.now() when value is undefined during INSERT. */
+  /**
+   * Use `Date.now()` as the default when the value is omitted during insert.
+   *
+   * @example
+   * const createdAt = date("created_at").defaultNow();
+   */
   defaultNow(): DateColumnDefWithDefault;
-  /** Always set to current Date.now() on UPDATE, regardless of user value. */
+  /**
+   * Always set to `Date.now()` on update, regardless of the provided value.
+   *
+   * @example
+   * const updatedAt = date("updated_at").onUpdate();
+   */
   onUpdate(): DateColumnDef;
 }
 
-/** Date column with a guaranteed default — non-nullable in results. */
+/** A date column with a guaranteed default value, making it non-nullable in query results. */
 export interface DateColumnDefWithDefault extends DateColumnDef {
   primaryKey(): DateColumnDefWithDefault;
   notNull(): DateColumnDefWithDefault;
@@ -83,11 +98,8 @@ export interface DateColumnDefWithDefault extends DateColumnDef {
   onUpdate(): DateColumnDefWithDefault;
 }
 
-// -----------------------------------------------------------------------
-// Internal builder
-// -----------------------------------------------------------------------
-
-/** Cast null to a column's type — used when SQLite returns NULL for a nullable column. */
+// @internal Internal builder
+/** @internal Cast null to a column's type. */
 function nullCast<T>(): T {
   return null as unknown as T;
 }
@@ -145,10 +157,13 @@ function makeColumn<T, S extends string>(config: {
   return col;
 }
 
-// -----------------------------------------------------------------------
 // Public column constructors
-// -----------------------------------------------------------------------
-
+/**
+ * Create a text column.
+ *
+ * @example
+ * const name = text("name").notNull();
+ */
 export function text(name?: string): ColumnDef<string, "text"> {
   return makeColumn({
     name: name ?? "",
@@ -158,6 +173,12 @@ export function text(name?: string): ColumnDef<string, "text"> {
   });
 }
 
+/**
+ * Create an integer column.
+ *
+ * @example
+ * const id = integer("id").primaryKey().autoIncrement();
+ */
 export function integer(name?: string): IntegerColumnDef<"integer"> {
   const base = makeColumn<number, "integer">({
     name: name ?? "",
@@ -191,7 +212,12 @@ export function integer(name?: string): IntegerColumnDef<"integer"> {
   return intCol;
 }
 
-/** Stores 0/1 in SQLite, exposes boolean in TS. */
+/**
+ * Create a boolean column. Stores `0`/`1` in SQLite, exposed as `boolean` in TypeScript.
+ *
+ * @example
+ * const active = boolean("active").notNull().default(true);
+ */
 export function boolean(name?: string): ColumnDef<boolean, "integer"> {
   return makeColumn({
     name: name ?? "",
@@ -201,7 +227,12 @@ export function boolean(name?: string): ColumnDef<boolean, "integer"> {
   });
 }
 
-/** Stores JSON text in SQLite, exposes T in TS. */
+/**
+ * Create a JSON column. Stores JSON text in SQLite, exposed as `T` in TypeScript.
+ *
+ * @example
+ * const meta = json<Record<string, unknown>>("meta").default({});
+ */
 export function json<T>(name?: string): ColumnDef<T, "text"> {
   return makeColumn({
     name: name ?? "",
@@ -212,7 +243,12 @@ export function json<T>(name?: string): ColumnDef<T, "text"> {
   });
 }
 
-/** Stores unix timestamp in milliseconds (integer) in SQLite, exposes Date in TS. */
+/**
+ * Create a date column. Stores a unix timestamp (milliseconds) in SQLite, exposed as `Date` in TypeScript.
+ *
+ * @example
+ * const createdAt = date("created_at").defaultNow().notNull();
+ */
 export function date(name?: string): DateColumnDef {
   const base = makeColumn<Date, "integer">({
     name: name ?? "",
@@ -249,6 +285,12 @@ export function date(name?: string): DateColumnDef {
   return dateCol;
 }
 
+/**
+ * Create a real (floating-point) column.
+ *
+ * @example
+ * const price = real("price").notNull();
+ */
 export function real(name?: string): ColumnDef<number, "real"> {
   return makeColumn({
     name: name ?? "",

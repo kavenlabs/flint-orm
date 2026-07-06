@@ -1,6 +1,4 @@
-// -----------------------------------------------------------------------
-// Error classes — typed errors for better error handling.
-// -----------------------------------------------------------------------
+// Error classes
 
 /** Base error class for all flint-orm errors. */
 export class FlintError extends Error {
@@ -10,7 +8,7 @@ export class FlintError extends Error {
   }
 }
 
-/** Thrown when a value violates a column constraint (notNull, type mismatch). */
+/** Thrown when a value violates a column constraint or a validation rule fails. */
 export class FlintValidationError extends FlintError {
   constructor(message: string) {
     super(message);

@@ -1,28 +1,11 @@
-// -----------------------------------------------------------------------
-// Table definition — column definitions live as direct properties of the
-// table object so that `users.name` is the ColumnDef, not the table name.
-// Table metadata (SQL name) is stored under `._`.
-// -----------------------------------------------------------------------
-
+// Table definition
 import type { ColumnDef, IntegerColumnDef, DateColumnDef, DateColumnDefWithDefault } from "./columns";
-/**
- * A table definition. `T` is the column map — every key is a column name
- * whose value is a ColumnDef. The hidden `._` property carries SQL metadata.
- */
+/** A table definition mapping column names to their `ColumnDef`s. */
 export type TableDef<T> = T & {
   readonly _: { readonly name: string };
 };
 
-/**
- * Internal constraint type for generic parameters.
- * `TableDef<any>` collapses to `any` (intersection with any = any),
- * which forces `as any` casts everywhere. This type preserves the
- * structural information so property access works without assertions.
- *
- * Uses `Record<string, unknown>` instead of `Record<string, ColumnDef<any, any>>`
- * to avoid index signature conflict with the `_` metadata property.
- * Column types are enforced at the call site via the `T` parameter.
- */
+/** @internal A relaxed table type used internally for generic constraints. */
 export type AnyTable = {
   readonly _: { readonly name: string };
   [key: string]: unknown;
@@ -30,11 +13,12 @@ export type AnyTable = {
 
 /**
  * Define a table from a record of column definitions.
- * Stamps the table name onto each column's __internal.tableName
- * so that join conditions can disambiguate columns across tables.
  *
- * Modifier methods (notNull, primaryKey, unique) are recreated on each
- * stamped column so they close over the stamped object, preserving tableName.
+ * @example
+ * const users = table("users", {
+ *   id: text("id").primaryKey(),
+ *   name: text("name").notNull(),
+ * });
  */
 /** A column with optional modifier methods from sub-interfaces. */
 type StampedColumn = ColumnDef<any, any> & {
@@ -102,12 +86,7 @@ export function table<T extends Record<string, ColumnDef<any, any>>>(
   }) as TableDef<T>;
 }
 
-/**
- * Derive the row shape from a table's column definitions.
- * DateColumnDef → Date | null (nullable unless defaultNow() was called)
- * DateColumnDefWithDefault → Date (non-nullable, has a guaranteed default)
- * All other columns → their _type as-is.
- */
+/** Derive the row type from a table definition, mapping column defs to their TypeScript types. */
 export type InferRow<T extends TableDef<any>> = {
   [K in keyof Omit<T, "_">]: T[K] extends DateColumnDefWithDefault
     ? Date
@@ -118,14 +97,14 @@ export type InferRow<T extends TableDef<any>> = {
         : never;
 };
 
-/** Check if a column has an auto-generated default (DateColumnDef or IntegerColumnDef). */
+/** @internal Check if a column has an auto-generated default. */
 type HasAutoDefault<C> = C extends DateColumnDef
   ? true
   : C extends IntegerColumnDef<any>
     ? true
     : false;
 
-/** Row type for INSERT — DateColumnDef and IntegerColumnDef columns are optional. */
+/** The row type for inserts — columns with auto-defaults (integer, date) are optional. */
 export type InsertRow<T extends TableDef<any>> = {
   [K in keyof Omit<T, "_"> as HasAutoDefault<T[K]> extends true ? never : K]: T[K] extends ColumnDef<any, any>
     ? T[K]["__internal"]["_type"]
@@ -136,11 +115,8 @@ export type InsertRow<T extends TableDef<any>> = {
     : never;
 };
 
-// -----------------------------------------------------------------------
-// snakeCase helper — auto-converts camelCase keys to snake_case SQL names
-// -----------------------------------------------------------------------
-
-/** Convert camelCase to snake_case. */
+// @internal snakeCase helper
+/** @internal Convert camelCase to snake_case. */
 function toSnakeCase(str: string): string {
   return str.replace(/[A-Z]/g, (letter) => `_${letter.toLowerCase()}`);
 }
@@ -148,7 +124,13 @@ function toSnakeCase(str: string): string {
 /**
  * Define a table with auto snake_case column names.
  * Column names are inferred from object keys and converted to snake_case.
- * Column constructors (text(), integer(), etc.) can be called without a name.
+ * Column constructors can be called without a name.
+ *
+ * @example
+ * const users = snakeCase.table("users", {
+ *   id: text().primaryKey(),
+ *   firstName: text(),
+ * });
  */
 export function snakeCaseTable<T extends Record<string, ColumnDef<any, any>>>(
   tableName: string,
@@ -205,9 +187,7 @@ export function snakeCaseTable<T extends Record<string, ColumnDef<any, any>>>(
   return table(tableName, converted as T);
 }
 
-/**
- * snakeCase namespace — provides snakeCase.table() for auto snake_case column names.
- */
+/** Provides `snakeCase.table()` for auto snake_case column naming. */
 export const snakeCase = {
   table: snakeCaseTable,
 };

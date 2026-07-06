@@ -1,28 +1,22 @@
-// -----------------------------------------------------------------------
-// Aggregate functions — count, countColumn, sum, avg, min, max
-// -----------------------------------------------------------------------
-
+// Aggregate functions
 import type { Database, SQLQueryBindings } from "bun:sqlite";
 import type { ColumnDef } from "../schema/columns";
 import type { AnyTable } from "../schema/table";
 import type { Condition } from "./conditions";
 import { compileCondition } from "./conditions";
 
-// -----------------------------------------------------------------------
-// Helpers
-// -----------------------------------------------------------------------
-
-/** Extract the table name from a table definition. */
+// @internal Helpers
+/** @internal Extract the table name from a table definition. */
 function getTableName(table: AnyTable): string {
   return table._.name;
 }
 
-/** Extract the column name from a ColumnDef. */
+/** @internal Extract the column name from a ColumnDef. */
 function getColumnName(column: ColumnDef<any, any>): string {
   return column.name;
 }
 
-/** Compile a condition to { sql, params } — returns empty string if no condition. */
+/** @internal Compile a condition to { sql, params }. */
 function compileWhere(condition?: Condition): { whereSql: string; params: unknown[] } {
   if (!condition) {
     return { whereSql: "", params: [] };
@@ -32,15 +26,13 @@ function compileWhere(condition?: Condition): { whereSql: string; params: unknow
   return { whereSql: ` WHERE ${whereSql}`, params };
 }
 
-// -----------------------------------------------------------------------
 // Aggregate functions
-// -----------------------------------------------------------------------
-
 /**
- * count(*) — count all rows in the table.
- * @param table - The table to count rows from
- * @param condition - Optional WHERE condition
- * @returns The count as a number
+ * Count all rows in a table, optionally filtered by a condition.
+ *
+ * @example
+ * const total = db.count(users);
+ * const active = db.count(users, eq(users.active, true));
  */
 export function count<T extends AnyTable>(
   client: Database,
@@ -55,11 +47,10 @@ export function count<T extends AnyTable>(
 }
 
 /**
- * count(column) — count non-null values of a column.
- * @param table - The table to count from
- * @param column - The column to count non-null values for
- * @param condition - Optional WHERE condition
- * @returns The count as a number
+ * Count non-null values of a column, optionally filtered by a condition.
+ *
+ * @example
+ * const count = db.countColumn(users, users.email);
  */
 export function countColumn<T extends AnyTable, C extends ColumnDef<any, any>>(
   client: Database,
@@ -76,11 +67,10 @@ export function countColumn<T extends AnyTable, C extends ColumnDef<any, any>>(
 }
 
 /**
- * sum(column) — sum of non-null values.
- * @param table - The table to sum from
- * @param column - The column to sum
- * @param condition - Optional WHERE condition
- * @returns The sum as a number, or null if no rows match
+ * Sum non-null values of a column, optionally filtered by a condition.
+ *
+ * @example
+ * const total = db.sum(orders, orders.amount);
  */
 export function sum<T extends AnyTable, C extends ColumnDef<any, any>>(
   client: Database,
@@ -97,11 +87,10 @@ export function sum<T extends AnyTable, C extends ColumnDef<any, any>>(
 }
 
 /**
- * avg(column) — average of non-null values.
- * @param table - The table to average from
- * @param column - The column to average
- * @param condition - Optional WHERE condition
- * @returns The average as a number, or null if no rows match
+ * Average non-null values of a column, optionally filtered by a condition.
+ *
+ * @example
+ * const avgAge = db.avg(users, users.age);
  */
 export function avg<T extends AnyTable, C extends ColumnDef<any, any>>(
   client: Database,
@@ -118,11 +107,10 @@ export function avg<T extends AnyTable, C extends ColumnDef<any, any>>(
 }
 
 /**
- * min(column) — minimum non-null value.
- * @param table - The table to find minimum from
- * @param column - The column to find minimum of
- * @param condition - Optional WHERE condition
- * @returns The minimum value, or null if no rows match
+ * Find the minimum non-null value of a column, optionally filtered by a condition.
+ *
+ * @example
+ * const minAge = db.min(users, users.age);
  */
 export function min<T extends AnyTable, C extends ColumnDef<any, any>>(
   client: Database,
@@ -139,11 +127,10 @@ export function min<T extends AnyTable, C extends ColumnDef<any, any>>(
 }
 
 /**
- * max(column) — maximum non-null value.
- * @param table - The table to find maximum from
- * @param column - The column to find maximum of
- * @param condition - Optional WHERE condition
- * @returns The maximum value, or null if no rows match
+ * Find the maximum non-null value of a column, optionally filtered by a condition.
+ *
+ * @example
+ * const maxAge = db.max(users, users.age);
  */
 export function max<T extends AnyTable, C extends ColumnDef<any, any>>(
   client: Database,

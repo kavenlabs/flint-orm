@@ -1,10 +1,7 @@
-// -----------------------------------------------------------------------
-// Condition helpers — typed eq / and / or for WHERE clauses.
-// -----------------------------------------------------------------------
-
+// Condition helpers
 import type { ColumnDef } from "../schema/columns";
 
-/** A condition node — either a comparison or a logical组合. */
+/** A condition node used in WHERE clauses. */
 export type Condition =
   | { type: "eq"; column: ColumnDef<any, any>; value: unknown }
   | { type: "eqColumn"; left: ColumnDef<any, any>; right: ColumnDef<any, any> }
@@ -23,14 +20,20 @@ export type Condition =
   | { type: "and"; conditions: Condition[] }
   | { type: "or"; conditions: Condition[] };
 
-/** Type guard — check if a value is a ColumnDef. */
+/** @internal Type guard — check if a value is a ColumnDef. */
 function isColumnDef(value: unknown): value is ColumnDef<any, any> {
   return value !== null && typeof value === "object" && "__internal" in (value as Record<string, unknown>);
 }
 
 /**
- * Equality check — value type is inferred from the column's phantom _type.
- * Also supports column-to-column comparison when the second argument is a ColumnDef.
+ * Check if a column equals a value, or if two columns are equal.
+ *
+ * @example
+ * // Value comparison
+ * where(eq(users.name, "Alice"))
+ *
+ * // Column-to-column comparison
+ * where(eq(orders.userId, users.id))
  */
 export function eq<T>(column: ColumnDef<T, any>, value: T): Condition;
 export function eq<T>(left: ColumnDef<T, any>, right: ColumnDef<T, any>): Condition;
@@ -41,90 +44,145 @@ export function eq(left: ColumnDef<any, any>, valueOrColumn: unknown): Condition
   return { type: "eq", column: left, value: valueOrColumn };
 }
 
-/** Combine conditions with AND. */
+/**
+ * Combine conditions with AND.
+ *
+ * @example
+ * where(and(eq(users.name, "Alice"), eq(users.active, true)))
+ */
 export function and(...conditions: Condition[]): Condition {
   return { type: "and", conditions };
 }
 
-/** Combine conditions with OR. */
+/**
+ * Combine conditions with OR.
+ *
+ * @example
+ * where(or(eq(users.role, "admin"), eq(users.role, "moderator")))
+ */
 export function or(...conditions: Condition[]): Condition {
   return { type: "or", conditions };
 }
 
-/** Check if column value is in the given array. */
+/**
+ * Check if a column's value is in the given array.
+ *
+ * @example
+ * where(isIn(users.id, ["u1", "u2", "u3"]))
+ */
 export function isIn<T>(column: ColumnDef<T, any>, values: T[]): Condition {
   return { type: "in", column, values };
 }
 
-/** Check if column value is not in the given array. */
+/**
+ * Check if a column's value is not in the given array.
+ *
+ * @example
+ * where(isNotIn(users.id, ["u4", "u5"]))
+ */
 export function isNotIn<T>(column: ColumnDef<T, any>, values: T[]): Condition {
   return { type: "notIn", column, values };
 }
 
-/** Check if column value is NULL. */
+/**
+ * Check if a column is NULL.
+ *
+ * @example
+ * where(isNull(users.deletedAt))
+ */
 export function isNull(column: ColumnDef<any, any>): Condition {
   return { type: "isNull", column };
 }
 
-/** Check if column value is NOT NULL. */
+/**
+ * Check if a column is NOT NULL.
+ *
+ * @example
+ * where(isNotNull(users.name))
+ */
 export function isNotNull(column: ColumnDef<any, any>): Condition {
   return { type: "isNotNull", column };
 }
 
 /**
- * Pattern match using LIKE.
- * Use `%` for any sequence of characters, `_` for any single character.
- * Case-insensitive by default in SQLite.
+ * Pattern match using SQL `LIKE`. Use `%` for any sequence of characters, `_` for a single character.
+ *
+ * @example
+ * where(like(users.name, "A%"))
  */
 export function like(column: ColumnDef<any, any>, pattern: string): Condition {
   return { type: "like", column, pattern };
 }
 
 /**
- * Pattern match using GLOB.
- * Use `*` for any sequence of characters, `?` for any single character.
- * Case-sensitive (unlike LIKE).
+ * Pattern match using SQL `GLOB`. Use `*` for any sequence of characters, `?` for a single character.
+ *
+ * @example
+ * where(glob(users.name, "A*"))
  */
 export function glob(column: ColumnDef<any, any>, pattern: string): Condition {
   return { type: "glob", column, pattern };
 }
 
 /**
- * Range check — column value must be between low and high (inclusive).
+ * Check if a column's value is between `low` and `high` (inclusive).
+ *
+ * @example
+ * where(between(users.age, 18, 65))
  */
 export function between<T>(column: ColumnDef<T, any>, low: T, high: T): Condition {
   return { type: "between", column, low, high };
 }
 
-/** Greater than — column > value. */
+/**
+ * Check if a column's value is greater than a value.
+ *
+ * @example
+ * where(gt(users.age, 18))
+ */
 export function gt<T>(column: ColumnDef<T, any>, value: T): Condition {
   return { type: "gt", column, value };
 }
 
-/** Greater than or equal — column >= value. */
+/**
+ * Check if a column's value is greater than or equal to a value.
+ *
+ * @example
+ * where(gte(users.age, 18))
+ */
 export function gte<T>(column: ColumnDef<T, any>, value: T): Condition {
   return { type: "gte", column, value };
 }
 
-/** Less than — column < value. */
+/**
+ * Check if a column's value is less than a value.
+ *
+ * @example
+ * where(lt(users.age, 65))
+ */
 export function lt<T>(column: ColumnDef<T, any>, value: T): Condition {
   return { type: "lt", column, value };
 }
 
-/** Less than or equal — column <= value. */
+/**
+ * Check if a column's value is less than or equal to a value.
+ *
+ * @example
+ * where(lte(users.age, 65))
+ */
 export function lte<T>(column: ColumnDef<T, any>, value: T): Condition {
   return { type: "lte", column, value };
 }
 
-/** Not equal — column != value. */
+/**
+ * Check if a column's value is not equal to a value.
+ *
+ * @example
+ * where(neq(users.id, "u1"))
+ */
 export function neq<T>(column: ColumnDef<T, any>, value: T): Condition {
   return { type: "neq", column, value };
 }
-
-// -----------------------------------------------------------------------
-// Internal: compile a Condition tree to a SQL fragment + params array.
-// Encode is applied to every value at this single chokepoint.
-// -----------------------------------------------------------------------
 
 export function compileCondition(
   cond: Condition,

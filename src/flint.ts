@@ -1,8 +1,4 @@
-// -----------------------------------------------------------------------
-// flint() — factory function that returns a plain db object.
-// No classes, no `new`. Just a function call.
-// -----------------------------------------------------------------------
-
+// flint() factory
 import { Database, type SQLQueryBindings } from "bun:sqlite";
 import {
   SelectFromBuilder,
@@ -21,64 +17,84 @@ import type { ColumnDef } from "./schema/columns";
 export type { Executable, SelectStage1, InsertStage1, UpdateStage1, JoinSelectStage1, JoinBuilder, SingleJoinBuilder } from "./query/builder";
 export type { JoinResult } from "./query/builder";
 
-// -----------------------------------------------------------------------
 // Connection details
-// -----------------------------------------------------------------------
-
 export interface ConnectionDetails {
-  /** SQLite filename (e.g. "app.db") or file: URL */
+  /** Connection details for the SQLite database. */
   url: string;
 }
 
-// -----------------------------------------------------------------------
-// flint() factory
-// -----------------------------------------------------------------------
-
+/**
+ * Create a flint database client.
+ *
+ * @example
+ * const db = flint({ url: "app.db" });
+ */
 export function flint(details: ConnectionDetails) {
   // For now, only bun:sqlite. Future: libsql support.
   const client = new Database(details.url);
 
   return {
     /**
-     * Start a SELECT query — call .from(table) next.
-     * Returns SelectStage1: only .from() is available until a table is supplied.
+     * Start a SELECT query — call `.from(table)` next.
+     *
+     * @example
+     * const rows = db.select().from(users).execute()
      */
     select: (): SelectStage1 => new SelectFromBuilder(client),
 
-    /** Start an INSERT — call .values(row) next. */
+    /**
+     * Start an INSERT — call `.values(row)` next.
+     *
+     * @example
+     * db.insert(users).values({ id: "u1", name: "Alice" }).execute()
+     */
     insert: <T extends AnyTable>(table: T): InsertStage1<T> =>
       new InsertValuesBuilder<T>(client, table._.name, table),
 
-    /** Start an UPDATE — call .set(partial) next. */
+    /**
+     * Start an UPDATE — call `.set(partial)` next.
+     *
+     * @example
+     * db.update(users).set({ name: "Bob" }).where(eq(users.id, "u1")).execute()
+     */
     update: <T extends AnyTable>(table: T): UpdateStage1<T> =>
       new UpdateSetBuilder<T>(client, table._.name, table),
 
-    /** Start a DELETE — call .where(condition) next. */
+    /**
+     * Start a DELETE — call `.where(condition)` next.
+     *
+     * @example
+     * db.delete(users).where(eq(users.id, "u1")).execute()
+     */
     delete: <T extends AnyTable>(table: T) =>
       new DeleteBuilder<T>(client, table._.name, table),
 
     /**
-     * LEFT JOIN — call .on(condition) next.
-     * Returns rows from the left table, with matching right table data
-     * (or null values if no match). One-to-many produces nested arrays.
+     * Start a LEFT JOIN — call `.on(child)` next.
+     *
+     * @example
+     * db.leftJoin(users).on(posts).execute()
      */
     leftJoin: <Parent extends AnyTable>(parent: Parent): JoinSelectStage1<Parent> =>
       new JoinStage1(client, parent, parent._.name, "left"),
 
     /**
-     * INNER JOIN — call .on(condition) next.
-     * Returns only rows where both tables have matching data.
-     * One-to-many produces nested arrays.
+     * Start an INNER JOIN — call `.on(child)` next.
+     *
+     * @example
+     * db.innerJoin(users).on(posts).execute()
      */
     innerJoin: <Parent extends AnyTable>(parent: Parent): JoinSelectStage1<Parent> =>
       new JoinStage1(client, parent, parent._.name, "inner"),
 
     /**
      * Run multiple queries atomically in a single transaction.
-     * Each query must be an Executable (anything with a .toSQL() method).
-     * .toSQL() is called internally — callers don't need to wrap anything.
      *
-     * Current impl: bun:sqlite's transaction(). Future: libsql's native batch().
+     * @example
+     * db.batch([
+     *   db.insert(users).values({ id: "u1", name: "Alice" }),
+     *   db.insert(posts).values({ id: "p1", userId: "u1", title: "Hello" }),
+     * ])
      */
     batch: (queries: Executable[]) => {
       const stmts = queries.map((q) => q.toSQL());
@@ -90,56 +106,87 @@ export function flint(details: ConnectionDetails) {
       tx();
     },
 
-    /** count(*) — count all rows in the table. */
+    /**
+     * Count all rows in a table, optionally filtered by a condition.
+     *
+     * @example
+     * db.count(users)
+     */
     count: <T extends AnyTable>(table: T, condition?: Condition) =>
       count(client, table, condition),
 
-    /** count(column) — count non-null values of a column. */
+    /**
+     * Count non-null values of a column, optionally filtered by a condition.
+     *
+     * @example
+     * db.countColumn(users, users.email)
+     */
     countColumn: <T extends AnyTable, C extends ColumnDef<any, any>>(table: T, column: C, condition?: Condition) =>
       countColumn(client, table, column, condition),
 
-    /** sum(column) — sum of non-null values. */
+    /**
+     * Sum non-null values of a column, optionally filtered by a condition.
+     *
+     * @example
+     * db.sum(orders, orders.amount)
+     */
     sum: <T extends AnyTable, C extends ColumnDef<any, any>>(table: T, column: C, condition?: Condition) =>
       sum(client, table, column, condition),
 
-    /** avg(column) — average of non-null values. */
+    /**
+     * Average non-null values of a column, optionally filtered by a condition.
+     *
+     * @example
+     * db.avg(users, users.age)
+     */
     avg: <T extends AnyTable, C extends ColumnDef<any, any>>(table: T, column: C, condition?: Condition) =>
       avg(client, table, column, condition),
 
-    /** min(column) — minimum non-null value. */
+    /**
+     * Find the minimum non-null value of a column, optionally filtered by a condition.
+     *
+     * @example
+     * db.min(users, users.age)
+     */
     min: <T extends AnyTable, C extends ColumnDef<any, any>>(table: T, column: C, condition?: Condition) =>
       min(client, table, column, condition),
 
-    /** max(column) — maximum non-null value. */
+    /**
+     * Find the maximum non-null value of a column, optionally filtered by a condition.
+     *
+     * @example
+     * db.max(users, users.age)
+     */
     max: <T extends AnyTable, C extends ColumnDef<any, any>>(table: T, column: C, condition?: Condition) =>
       max(client, table, column, condition),
 
     /**
-     * Execute raw SQL directly.
-     * Returns all matching rows as plain objects.
+     * Execute raw SQL directly and return all matching rows.
      *
      * @example
      * db.raw("SELECT * FROM users WHERE id = ?", ["u1"])
-     * db.raw("SELECT count(*) as cnt FROM users")
      */
     raw: <T = Record<string, unknown>>(sql: string, params?: unknown[]): T[] => {
       return client.prepare(sql).all(...((params ?? []) as SQLQueryBindings[])) as T[];
     },
 
-    /** Direct access to the underlying client (escape hatch). */
+    /** Direct access to the underlying `bun:sqlite` client. */
     $client: client,
   };
 }
 
-// -----------------------------------------------------------------------
-// sql tagged template — raw SQL expressions (basic implementation)
-// -----------------------------------------------------------------------
-
+/** A raw SQL expression with parameters. */
 export interface SQLExpression {
   sql: string;
   params: unknown[];
 }
 
+/**
+ * Tagged template for building parameterized SQL expressions.
+ *
+ * @example
+ * const expr = sql`name = ${"Alice"} AND age > ${18}`
+ */
 export function sql(strings: TemplateStringsArray, ...values: unknown[]): SQLExpression {
   let sql = "";
   const params: unknown[] = [];
