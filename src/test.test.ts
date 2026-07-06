@@ -631,6 +631,43 @@ console.log("neq SQL:", db.select().from(orders).where(neq(orders.total, 100)).t
 
 console.log();
 
+// ── FEATURE 11: on conflict (upsert) ──────────────────────────────────────
+
+console.log("── on conflict ──");
+
+// Insert a user
+db.insert(users).values({ id: "u10", name: "TestUser", active: true }).execute();
+const u10Before = db.select().from(users).where(eq(users.id, "u10")).single().execute();
+console.log("u10 before:", u10Before?.name);
+// Should be: TestUser
+
+// Try to insert same id with onConflictDoNothing — should be ignored
+db.insert(users)
+  .values({ id: "u10", name: "ShouldNotAppear", active: false })
+  .onConflictDoNothing()
+  .execute();
+const u10AfterNothing = db.select().from(users).where(eq(users.id, "u10")).single().execute();
+console.log("u10 after doNothing:", u10AfterNothing?.name);
+// Should be: TestUser (unchanged)
+
+// Try to insert same id with onConflictDoUpdate — should update name
+db.insert(users)
+  .values({ id: "u10", name: "UpdatedUser", active: true })
+  .onConflictDoUpdate({
+    target: users.id,
+    set: { name: "UpdatedUser" },
+  })
+  .execute();
+const u10AfterUpdate = db.select().from(users).where(eq(users.id, "u10")).single().execute();
+console.log("u10 after doUpdate:", u10AfterUpdate?.name);
+// Should be: UpdatedUser
+
+// toSQL examples
+console.log("doNothing SQL:", db.insert(users).values({ id: "u99", name: "x", active: true }).onConflictDoNothing().toSQL());
+console.log("doUpdate SQL:", db.insert(users).values({ id: "u99", name: "x", active: true }).onConflictDoUpdate({ target: users.id, set: { name: "x" } }).toSQL());
+
+console.log();
+
 // ── Cleanup ────────────────────────────────────────────────────────────────
 
 db.$client.close();

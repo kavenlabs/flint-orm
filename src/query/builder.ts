@@ -1148,6 +1148,15 @@ export class InsertValuesBuilder<T extends TableDef<any>> implements InsertStage
   }
 }
 
+/** ON CONFLICT strategy type. */
+type OnConflictDoNothing = { mode: "nothing" };
+type OnConflictDoUpdate<T extends TableDef<any>> = {
+  mode: "update";
+  target: ColumnDef<any, any> | ColumnDef<any, any>[];
+  set: Partial<InferRow<T>>;
+};
+type OnConflictStrategy<T extends TableDef<any>> = OnConflictDoNothing | OnConflictDoUpdate<T>;
+
 /** Full INSERT builder — available after .values() has been called. */
 export class InsertBuilder<T extends TableDef<any>, R extends boolean = false> implements Executable {
   #client: DatabaseClient;
@@ -1155,18 +1164,36 @@ export class InsertBuilder<T extends TableDef<any>, R extends boolean = false> i
   #table: T;
   #row: InsertRow<T>;
   #returning: boolean;
+  #onConflict?: OnConflictStrategy<T>;
 
-  constructor(client: DatabaseClient, tableName: string, table: T, row: InsertRow<T>, returning: R = false as R) {
+  constructor(client: DatabaseClient, tableName: string, table: T, row: InsertRow<T>, returning: R = false as R, onConflict?: OnConflictStrategy<T>) {
     this.#client = client;
     this.#tableName = tableName;
     this.#table = table;
     this.#row = row;
     this.#returning = returning;
+    this.#onConflict = onConflict;
   }
 
   /** Return the inserted row(s) instead of void. */
   returning(): InsertBuilder<T, true> {
-    return new InsertBuilder(this.#client, this.#tableName, this.#table, this.#row, true);
+    return new InsertBuilder(this.#client, this.#tableName, this.#table, this.#row, true, this.#onConflict);
+  }
+
+  /** On conflict, do nothing (ignore the insert). */
+  onConflictDoNothing(): InsertBuilder<T, R> {
+    return new InsertBuilder(this.#client, this.#tableName, this.#table, this.#row, this.#returning as R, { mode: "nothing" });
+  }
+
+  /** On conflict, update specified columns with the proposed values. */
+  onConflictDoUpdate<C extends ColumnDef<any, any>>(
+    options: { target: C | C[]; set: Partial<InferRow<T>> },
+  ): InsertBuilder<T, R> {
+    return new InsertBuilder(this.#client, this.#tableName, this.#table, this.#row, this.#returning as R, {
+      mode: "update",
+      target: options.target,
+      set: options.set,
+    });
   }
 
   toSQL(): { sql: string; params: unknown[] } {
@@ -1216,6 +1243,32 @@ export class InsertBuilder<T extends TableDef<any>, R extends boolean = false> i
       return c.__internal.encode(value);
     });
     let sql = `INSERT INTO ${this.#tableName} (${names}) VALUES (${placeholders})`;
+
+    // ON CONFLICT clause
+    if (this.#onConflict) {
+      if (this.#onConflict.mode === "nothing") {
+        sql += " ON CONFLICT DO NOTHING";
+      } else {
+        // Build target column(s)
+        const target = this.#onConflict.target;
+        const targetCols = Array.isArray(target) ? target : [target];
+        const targetNames = targetCols.map((c) => c.name).join(", ");
+
+        // Build SET clause using excluded.* for proposed values
+        const setEntries = Object.entries(this.#onConflict.set);
+        const setClauses = setEntries.map(([key, value]) => {
+          const col = (this.#table as any)[key] as ColumnDef<any, any>;
+          if (value === undefined) return null;
+          // Use excluded.column for the proposed value
+          return `${col.name} = excluded.${col.name}`;
+        }).filter(Boolean);
+
+        if (setClauses.length > 0) {
+          sql += ` ON CONFLICT (${targetNames}) DO UPDATE SET ${setClauses.join(", ")}`;
+        }
+      }
+    }
+
     if (this.#returning) sql += " RETURNING *";
     return { sql, params };
   }
