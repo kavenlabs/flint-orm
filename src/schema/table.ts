@@ -17,6 +17,9 @@ export type TableDef<T> = T & {
  * Define a table from a record of column definitions.
  * Stamps the table name onto each column's __internal.tableName
  * so that join conditions can disambiguate columns across tables.
+ *
+ * Modifier methods (notNull, primaryKey, unique) are recreated on each
+ * stamped column so they close over the stamped object, preserving tableName.
  */
 export function table<T extends Record<string, ColumnDef<any, any>>>(
   name: string,
@@ -25,10 +28,21 @@ export function table<T extends Record<string, ColumnDef<any, any>>>(
   // Stamp table name onto each column
   const stamped = Object.create(null);
   for (const [key, col] of Object.entries(columns)) {
-    stamped[key] = {
-      ...col,
-      __internal: { ...col.__internal, tableName: name },
+    const stampedInternal = { ...col.__internal, tableName: name };
+    const stampedCol: ColumnDef<any, any> = {
+      name: col.name,
+      __internal: stampedInternal,
+      primaryKey() {
+        return { ...stampedCol, __internal: { ...stampedInternal, isPrimaryKey: true } };
+      },
+      notNull() {
+        return { ...stampedCol, __internal: { ...stampedInternal, isNotNull: true } };
+      },
+      unique() {
+        return { ...stampedCol, __internal: { ...stampedInternal, isUnique: true } };
+      },
     };
+    stamped[key] = stampedCol;
   }
   return Object.assign(stamped, {
     _: { name },

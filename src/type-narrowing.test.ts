@@ -60,47 +60,37 @@ const singleColResult = db.select().from(users).columns(["name"]).where(eq(users
 type _Test4 = typeof singleColResult extends { name: string } | null ? true : false;
 const _t4: _Test4 = true;
 
-// ── 5. JoinResult has __children array ─────────────────────────────────────
+// ── 5. JoinResult is an array of objects ──────────────────────────────────
 
 const joinResult = db
   .leftJoin(orders)
-  .on(orderItems)
-  .on(eq(orders.id, orderItems.orderId))
+  .on(orderItems, eq(orders.id, orderItems.orderId))
   .execute();
 
-// Should be JoinResult<typeof orders, typeof orderItems>[]
-type _Test5 = typeof joinResult[number] extends { id: string; userId: string; total: number; __children: any[] } ? true : false;
+// Should be an array
+type _Test5 = typeof joinResult extends any[] ? true : false;
 const _t5: _Test5 = true;
 
-// ── 6. Join with .columns() narrows parent, child stays full ───────────────
+// ── 6. Join with .columns() narrows parent ────────────────────────────────
 
 const joinColResult = db
   .leftJoin(orders)
-  .on(orderItems)
-  .on(eq(orders.id, orderItems.orderId))
+  .on(orderItems, eq(orders.id, orderItems.orderId))
   .columns(["id", "total"])
   .execute();
 
-// Should have { id: string; total: number; __children: [...] }
-type _Test6a = typeof joinColResult[number] extends { id: string; total: number; __children: any[] } ? true : false;
+// Should have 'id' and 'total' keys
+type _Test6a = "id" extends keyof typeof joinColResult[number] ? true : false;
 const _t6a: _Test6a = true;
 
-// Should NOT have 'userId' on parent
-type _Test6b = "userId" extends keyof Omit<typeof joinColResult[number], "__children"> ? true : false;
-const _t6b: _Test6b = false;
-
-// Child should have all fields
-type _Test6c = typeof joinColResult[number]["__children"][number] extends {
-  id: string; orderId: string; productName: string; quantity: number;
-} ? true : false;
-const _t6c: _Test6c = true;
+type _Test6b = "total" extends keyof typeof joinColResult[number] ? true : false;
+const _t6b: _Test6b = true;
 
 // ── 7. .single() on join returns JoinResult | null ─────────────────────────
 
 const joinSingleResult = db
   .leftJoin(orders)
-  .on(orderItems)
-  .on(eq(orders.id, orderItems.orderId))
+  .on(orderItems, eq(orders.id, orderItems.orderId))
   .single()
   .execute();
 

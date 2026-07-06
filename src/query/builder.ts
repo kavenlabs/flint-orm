@@ -51,37 +51,32 @@ function decodeSelectedRow<T extends TableDef<any>, C extends keyof InferRow<T>>
   return out as Pick<InferRow<T>, C>;
 }
 
-/** Decode a flat joined row into two separate table shapes. */
-function decodeJoinedRow<Parent extends TableDef<any>, Child extends TableDef<any>>(
-  raw: Record<string, unknown>,
-  parent: Parent,
-  child: Child,
-): [InferRow<Parent>, InferRow<Child>] {
-  const p: Record<string, unknown> = {};
-  for (const [key, col] of columnEntries(parent as any)) {
-    p[key] = col.__internal.decode(raw[col.name]);
-  }
-  const c: Record<string, unknown> = {};
-  for (const [key, col] of columnEntries(child as any)) {
-    c[key] = col.__internal.decode(raw[`${(child as any)._.name}_${col.name}`]);
-  }
-  return [p as InferRow<Parent>, c as InferRow<Child>];
-}
-
-/** Find the primary key column name of a table. Throws if none found. */
-function findPK(tbl: TableDef<any>): string {
-  for (const [, col] of columnEntries(tbl as any)) {
-    if (col.__internal.isPrimaryKey) return col.name;
-  }
-  throw new Error("Table has no primary key column — cannot group join results");
-}
-
 /** Find the primary key TS key of a table. */
 function findPKKey(tbl: TableDef<any>): string {
   for (const [key, col] of columnEntries(tbl as any)) {
     if (col.__internal.isPrimaryKey) return key;
   }
   throw new Error("Table has no primary key column");
+}
+
+/** Resolve column list SQL from selected columns or all entries. */
+function resolveColumns<T extends TableDef<any>>(
+  table: T,
+  selectedColumns: string[] | null,
+  prefix?: string,
+): string {
+  if (selectedColumns) {
+    return selectedColumns
+      .map((k) => {
+        const name = (table as any)[k].name;
+        return prefix ? `${prefix}.${name}` : name;
+      })
+      .join(", ");
+  }
+  const entries = columnEntries(table as any);
+  return entries
+    .map(([, c]) => (prefix ? `${prefix}.${c.name}` : c.name))
+    .join(", ");
 }
 
 // -----------------------------------------------------------------------
@@ -112,7 +107,7 @@ export interface DatabaseClient {
 type JoinType = "left" | "inner";
 
 // -----------------------------------------------------------------------
-// SELECT — three-phase: SelectStage1 → SelectBuilder → (ColumnSelectBuilder | SingleSelectBuilder)
+// SELECT — two-phase: SelectStage1 → SelectBuilder
 // -----------------------------------------------------------------------
 
 /** Phase 1: only .from() is available. */
@@ -172,8 +167,8 @@ export class SelectBuilder<T extends TableDef<any>, C extends keyof InferRow<T> 
    * Narrow which columns appear in the result.
    * Each string must be a real key on the table.
    */
-  columns<K extends keyof InferRow<T>>(keys: K[]): ColumnSelectBuilder<T, K> {
-    return new ColumnSelectBuilder(this.#client, this.#tableName, this.#table, this.#conditions, keys as any);
+  columns<K extends keyof InferRow<T>>(keys: K[]): SelectBuilder<T, K> {
+    return new SelectBuilder(this.#client, this.#tableName, this.#table, this.#conditions, keys as any);
   }
 
   /**
@@ -185,15 +180,7 @@ export class SelectBuilder<T extends TableDef<any>, C extends keyof InferRow<T> 
   }
 
   toSQL(): { sql: string; params: unknown[] } {
-    const entries = columnEntries(this.#table as any);
-    let cols: string;
-    if (this.#selectedColumns) {
-      cols = this.#selectedColumns
-        .map((k) => (this.#table as any)[k as string].name)
-        .join(", ");
-    } else {
-      cols = entries.map(([, c]) => c.name).join(", ");
-    }
+    const cols = resolveColumns(this.#table, this.#selectedColumns as string[] | null);
     const params: unknown[] = [];
     let sql = `SELECT ${cols} FROM ${this.#tableName}`;
     const where = compileConditions(this.#conditions, params);
@@ -208,57 +195,6 @@ export class SelectBuilder<T extends TableDef<any>, C extends keyof InferRow<T> 
       return rows.map((r) => decodeSelectedRow(r, this.#table, this.#selectedColumns!));
     }
     return rows.map((r) => decodeRow(r, this.#table));
-  }
-}
-
-// -----------------------------------------------------------------------
-// Column-selected SELECT builder — after .columns() has been called
-// -----------------------------------------------------------------------
-
-export class ColumnSelectBuilder<T extends TableDef<any>, C extends keyof InferRow<T>> implements Executable {
-  #client: DatabaseClient;
-  #tableName: string;
-  #table: T;
-  #conditions: Condition[];
-  #selectedColumns: C[];
-
-  constructor(
-    client: DatabaseClient,
-    tableName: string,
-    table: T,
-    conditions: Condition[],
-    selectedColumns: C[],
-  ) {
-    this.#client = client;
-    this.#tableName = tableName;
-    this.#table = table;
-    this.#conditions = conditions;
-    this.#selectedColumns = selectedColumns;
-  }
-
-  where(condition: Condition): ColumnSelectBuilder<T, C> {
-    return new ColumnSelectBuilder(this.#client, this.#tableName, this.#table, [...this.#conditions, condition], this.#selectedColumns);
-  }
-
-  single(): SingleSelectBuilder<T, C> {
-    return new SingleSelectBuilder(this.#client, this.#tableName, this.#table, this.#conditions, this.#selectedColumns);
-  }
-
-  toSQL(): { sql: string; params: unknown[] } {
-    const cols = this.#selectedColumns
-      .map((k) => (this.#table as any)[k as string].name)
-      .join(", ");
-    const params: unknown[] = [];
-    let sql = `SELECT ${cols} FROM ${this.#tableName}`;
-    const where = compileConditions(this.#conditions, params);
-    if (where !== "1=1") sql += ` WHERE ${where}`;
-    return { sql, params };
-  }
-
-  execute(): Pick<InferRow<T>, C>[] {
-    const { sql, params } = this.toSQL();
-    const rows = this.#client.prepare(sql).all(...bind(params)) as Record<string, unknown>[];
-    return rows.map((r) => decodeSelectedRow(r, this.#table, this.#selectedColumns));
   }
 }
 
@@ -292,15 +228,7 @@ export class SingleSelectBuilder<T extends TableDef<any>, C extends keyof InferR
   }
 
   toSQL(): { sql: string; params: unknown[] } {
-    const entries = columnEntries(this.#table as any);
-    let cols: string;
-    if (this.#selectedColumns) {
-      cols = this.#selectedColumns
-        .map((k) => (this.#table as any)[k as string].name)
-        .join(", ");
-    } else {
-      cols = entries.map(([, c]) => c.name).join(", ");
-    }
+    const cols = resolveColumns(this.#table, this.#selectedColumns as string[] | null);
     const params: unknown[] = [];
     let sql = `SELECT ${cols} FROM ${this.#tableName}`;
     const where = compileConditions(this.#conditions, params);
@@ -322,20 +250,57 @@ export class SingleSelectBuilder<T extends TableDef<any>, C extends keyof InferR
 }
 
 // -----------------------------------------------------------------------
-// JOIN — two-phase: JoinSelectStage1 → JoinOnBuilder → JoinSelectBuilder
+// JOIN — two-phase: JoinSelectStage1 → JoinBuilder
 // -----------------------------------------------------------------------
 
-/** Phase 1: only .on() is available after .leftJoin()/.innerJoin(). */
+/** Description of a single JOIN clause. */
+interface JoinClause {
+  table: TableDef<any>;
+  name: string;
+  condition: Condition;
+}
+
+/**
+ * Phase 1: only .on(child, condition) is available after db.leftJoin().
+ * .on() takes both the child table AND the join condition in one call.
+ * Chain multiple .on() calls for multiple joins.
+ */
 export interface JoinSelectStage1<Parent extends TableDef<any>> {
-  on<Child extends TableDef<any>>(child: Child): JoinOnBuilder<Parent, Child>;
+  on<Child extends TableDef<any>>(child: Child, condition: Condition): JoinBuilder<Parent, [Child]>;
 }
 
-/** Phase 2: .on() has been called, returning the full JoinSelectBuilder. */
-export interface JoinOnBuilder<Parent extends TableDef<any>, Child extends TableDef<any>> {
-  on(condition: Condition): JoinSelectBuilder<Parent, Child>;
+/**
+ * Full join builder — chain more .on() calls or call .execute().
+ * .on(child, condition) adds another join.
+ */
+export interface JoinBuilder<
+  Parent extends TableDef<any>,
+  Joined extends TableDef<any>[],
+  ParentCols extends keyof InferRow<Parent> = keyof InferRow<Parent>,
+> {
+  on<NewChild extends TableDef<any>>(child: NewChild, condition: Condition): JoinBuilder<Parent, [...Joined, NewChild], ParentCols>;
+  columns<K extends keyof InferRow<Parent>>(keys: K[]): JoinBuilder<Parent, Joined, K>;
+  where(condition: Condition): JoinBuilder<Parent, Joined, ParentCols>;
+  single(): SingleJoinBuilder<Parent, Joined, ParentCols>;
+  toSQL(): { sql: string; params: unknown[] };
+  execute(): JoinResult<Parent, Joined, ParentCols>[];
 }
 
-/** Implementation of JoinSelectStage1 — only .on() is available. */
+/** Single-row join builder — after .single() on a JoinBuilder. */
+export interface SingleJoinBuilder<
+  Parent extends TableDef<any>,
+  Joined extends TableDef<any>[],
+  ParentCols extends keyof InferRow<Parent> = keyof InferRow<Parent>,
+> {
+  where(condition: Condition): SingleJoinBuilder<Parent, Joined, ParentCols>;
+  toSQL(): { sql: string; params: unknown[] };
+  execute(): JoinResult<Parent, Joined, ParentCols> | null;
+}
+
+/**
+ * Implementation of JoinSelectStage1 — only .on(child, condition) is available.
+ * This is what db.leftJoin() returns.
+ */
 export class JoinStage1<Parent extends TableDef<any>> implements JoinSelectStage1<Parent> {
   #client: DatabaseClient;
   #parent: Parent;
@@ -349,218 +314,204 @@ export class JoinStage1<Parent extends TableDef<any>> implements JoinSelectStage
     this.#joinType = joinType;
   }
 
-  on<Child extends TableDef<any>>(child: Child): JoinOnBuilder<Parent, Child> {
+  /**
+   * Add a join. Takes both the child table AND the join condition.
+   * Returns a builder that allows chaining more .on() calls.
+   */
+  on<Child extends TableDef<any>>(child: Child, condition: Condition): JoinBuilder<Parent, [Child]> {
     const childName = (child as any)._.name as string;
-    return new JoinOnBuilderImpl(this.#client, this.#parent, this.#parentName, child, childName, this.#joinType);
-  }
-}
-
-/** Implementation of JoinOnBuilder — .on() returns JoinSelectBuilder. */
-class JoinOnBuilderImpl<Parent extends TableDef<any>, Child extends TableDef<any>> implements JoinOnBuilder<Parent, Child> {
-  #client: DatabaseClient;
-  #parent: Parent;
-  #parentName: string;
-  #child: Child;
-  #childName: string;
-  #joinType: JoinType;
-
-  constructor(
-    client: DatabaseClient,
-    parent: Parent,
-    parentName: string,
-    child: Child,
-    childName: string,
-    joinType: JoinType,
-  ) {
-    this.#client = client;
-    this.#parent = parent;
-    this.#parentName = parentName;
-    this.#child = child;
-    this.#childName = childName;
-    this.#joinType = joinType;
-  }
-
-  on(condition: Condition): JoinSelectBuilder<Parent, Child> {
-    return new JoinSelectBuilder(
+    return new JoinBuilderImpl(
       this.#client,
       this.#parent,
       this.#parentName,
-      this.#child,
-      this.#childName,
+      [{ table: child, name: childName, condition }],
       this.#joinType,
-      condition,
     );
   }
 }
 
 /**
- * Full JOIN builder — available after .leftJoin()/.innerJoin() and .on().
+ * Full JOIN builder — chains .on(child, condition) calls, executes with nested results.
  *
  * One-to-many joins produce nested results: the parent row appears once
- * with a key containing an array of all matching child rows.
- *
- * .columns() narrows top-level fields while the joined data arrives fully.
- * .single() returns one parent (with nested children) or null.
+ * with each joined table's data under its table name as key.
  */
-export class JoinSelectBuilder<
+export class JoinBuilderImpl<
   Parent extends TableDef<any>,
-  Child extends TableDef<any>,
+  Joined extends TableDef<any>[],
   ParentCols extends keyof InferRow<Parent> = keyof InferRow<Parent>,
-> implements Executable {
+> implements JoinBuilder<Parent, Joined, ParentCols> {
   #client: DatabaseClient;
   #parent: Parent;
   #parentName: string;
-  #child: Child;
-  #childName: string;
+  #joins: JoinClause[];
   #joinType: JoinType;
-  #joinCondition: Condition;
   #conditions: Condition[];
   #selectedColumns: ParentCols[] | null;
-
-  /** The key under which child rows are nested in the result. */
-  static readonly CHILD_KEY = "__children";
 
   constructor(
     client: DatabaseClient,
     parent: Parent,
     parentName: string,
-    child: Child,
-    childName: string,
+    joins: JoinClause[],
     joinType: JoinType,
-    joinCondition: Condition,
     conditions: Condition[] = [],
     selectedColumns: ParentCols[] | null = null,
   ) {
     this.#client = client;
     this.#parent = parent;
     this.#parentName = parentName;
-    this.#child = child;
-    this.#childName = childName;
+    this.#joins = joins;
     this.#joinType = joinType;
-    this.#joinCondition = joinCondition;
     this.#conditions = conditions;
     this.#selectedColumns = selectedColumns;
   }
 
-  where(condition: Condition): JoinSelectBuilder<Parent, Child, ParentCols> {
-    return new JoinSelectBuilder(
-      this.#client,
-      this.#parent,
-      this.#parentName,
-      this.#child,
-      this.#childName,
-      this.#joinType,
-      this.#joinCondition,
-      [...this.#conditions, condition],
-      this.#selectedColumns,
-    );
-  }
-
   /**
-   * Narrow which parent columns appear in the result.
-   * The child table's data always arrives fully as a nested array.
+   * Add another join. Takes both the child table AND the join condition.
+   * Returns a new builder with the accumulated joins.
    */
-  columns<K extends keyof InferRow<Parent>>(keys: K[]): JoinSelectBuilder<Parent, Child, K> {
-    return new JoinSelectBuilder(
-      this.#client, this.#parent, this.#parentName,
-      this.#child, this.#childName, this.#joinType,
-      this.#joinCondition, this.#conditions, keys as any,
-    );
-  }
-
-  /** Return a single parent (with nested children) or null. */
-  single(): SingleJoinSelectBuilder<Parent, Child, ParentCols> {
-    return new SingleJoinSelectBuilder(
+  on<NewChild extends TableDef<any>>(
+    child: NewChild,
+    condition: Condition,
+  ): JoinBuilder<Parent, [...Joined, NewChild], ParentCols> {
+    const childName = (child as any)._.name as string;
+    return new JoinBuilderImpl(
       this.#client,
       this.#parent,
       this.#parentName,
-      this.#child,
-      this.#childName,
+      [...this.#joins, { table: child, name: childName, condition }],
       this.#joinType,
-      this.#joinCondition,
       this.#conditions,
       this.#selectedColumns,
-    );
+    ) as any;
+  }
+
+  where(condition: Condition): JoinBuilder<Parent, Joined, ParentCols> {
+    return new JoinBuilderImpl(
+      this.#client,
+      this.#parent,
+      this.#parentName,
+      this.#joins,
+      this.#joinType,
+      [...this.#conditions, condition],
+      this.#selectedColumns,
+    ) as any;
+  }
+
+  columns<K extends keyof InferRow<Parent>>(keys: K[]): JoinBuilder<Parent, Joined, K> {
+    return new JoinBuilderImpl(
+      this.#client,
+      this.#parent,
+      this.#parentName,
+      this.#joins,
+      this.#joinType,
+      this.#conditions,
+      keys as any,
+    ) as any;
+  }
+
+  single(): SingleJoinBuilder<Parent, Joined, ParentCols> {
+    return new SingleJoinBuilderImpl(
+      this.#client,
+      this.#parent,
+      this.#parentName,
+      this.#joins,
+      this.#joinType,
+      this.#conditions,
+      this.#selectedColumns,
+    ) as any;
   }
 
   toSQL(): { sql: string; params: unknown[] } {
-    const parentEntries = columnEntries(this.#parent as any);
-    let parentCols: string;
-    if (this.#selectedColumns) {
-      parentCols = this.#selectedColumns
-        .map((k) => `${this.#parentName}.${(this.#parent as any)[k as string].name}`)
-        .join(", ");
-    } else {
-      parentCols = parentEntries.map(([, c]) => `${this.#parentName}.${c.name}`).join(", ");
+    const parentCols = resolveColumns(this.#parent, this.#selectedColumns as string[] | null, this.#parentName);
+
+    const childCols: string[] = [];
+    for (const join of this.#joins) {
+      const entries = columnEntries(join.table as any);
+      for (const [, c] of entries) {
+        childCols.push(`${join.name}.${c.name} AS ${join.name}_${c.name}`);
+      }
     }
 
-    const childEntries = columnEntries(this.#child as any);
-    const childCols = childEntries
-      .map(([, c]) => `${this.#childName}.${c.name} AS ${this.#childName}_${c.name}`)
-      .join(", ");
-
     const joinKeyword = this.#joinType === "left" ? "LEFT JOIN" : "INNER JOIN";
-    const params: unknown[] = [];
-    const where = compileConditions(this.#conditions, params);
-
-    let sql = `SELECT ${parentCols}${childCols ? ", " + childCols : ""} FROM ${this.#parentName} ${joinKeyword} ${this.#childName} ON ?`;
-    // The join condition's params need to come first.
-    // Actually, we need to compile the join condition separately.
+    const joinClauses: string[] = [];
     const joinParams: unknown[] = [];
-    const joinOn = compileConditions([this.#joinCondition], joinParams);
-    sql = `SELECT ${parentCols}${childCols ? ", " + childCols : ""} FROM ${this.#parentName} ${joinKeyword} ${this.#childName} ON ${joinOn}`;
+    for (const join of this.#joins) {
+      const joinOn = compileConditions([join.condition], joinParams);
+      joinClauses.push(`${joinKeyword} ${join.name} ON ${joinOn}`);
+    }
 
+    const whereParams: unknown[] = [];
+    const where = compileConditions(this.#conditions, whereParams);
+
+    let sql = `SELECT ${parentCols}${childCols.length ? ", " + childCols.join(", ") : ""} FROM ${this.#parentName} ${joinClauses.join(" ")}`;
     if (where !== "1=1") sql += ` WHERE ${where}`;
 
-    // Prepend join params before where params
-    return { sql, params: [...joinParams, ...params] };
+    return { sql, params: [...joinParams, ...whereParams] };
   }
 
-  execute(): JoinResult<Parent, Child, ParentCols>[] {
+  execute(): JoinResult<Parent, Joined, ParentCols>[] {
     const { sql, params } = this.toSQL();
     const rows = this.#client.prepare(sql).all(...bind(params)) as Record<string, unknown>[];
 
     // Group flat rows by parent PK
     const parentEntries = columnEntries(this.#parent as any);
-    const childEntries = columnEntries(this.#child as any);
     const pkKey = findPKKey(this.#parent);
     const pkColName = (this.#parent as any)[pkKey].name;
-    const grouped = new Map<unknown, { parent: Record<string, unknown>; children: Record<string, unknown>[] }>();
+
+    // Build child entry maps for each join
+    const childEntryMaps: { name: string; entries: [string, ColumnDef<any, any>][]; table: TableDef<any> }[] = [];
+    for (const j of this.#joins) {
+      childEntryMaps.push({
+        name: j.name,
+        entries: columnEntries(j.table as any),
+        table: j.table,
+      });
+    }
+
+    const grouped = new Map<unknown, { parent: Record<string, unknown>; children: Record<string, unknown>[][] }>();
 
     for (const row of rows) {
       const pk = row[pkColName];
       if (!grouped.has(pk)) {
-        // Extract parent columns from the row
         const parentRow: Record<string, unknown> = {};
         for (const [key, col] of parentEntries) {
           parentRow[key] = row[col.name];
         }
-        grouped.set(pk, { parent: parentRow, children: [] });
+        grouped.set(pk, {
+          parent: parentRow,
+          children: childEntryMaps.map(() => []),
+        });
       }
-      // Extract child columns (prefixed with childTableName_)
-      const childRow: Record<string, unknown> = {};
-      let hasNonNullChild = false;
-      for (const [key, col] of childEntries) {
-        const val = row[`${this.#childName}_${col.name}`];
-        childRow[key] = val;
-        if (val != null) hasNonNullChild = true;
-      }
-      // For LEFT JOIN: only add child if at least one child column is non-null
-      if (this.#joinType === "left" && !hasNonNullChild) continue;
-      grouped.get(pk)!.children.push(childRow);
+
+      const group = grouped.get(pk)!;
+      childEntryMaps.forEach((childMap, i) => {
+        const childRow: Record<string, unknown> = {};
+        let hasNonNullChild = false;
+        for (const [key, col] of childMap.entries) {
+          const val = row[`${childMap.name}_${col.name}`];
+          childRow[key] = val;
+          if (val != null) hasNonNullChild = true;
+        }
+        if (this.#joinType === "left" && !hasNonNullChild) return;
+        group.children[i]!.push(childRow);
+      });
     }
 
     // Build nested result
-    const result: JoinResult<Parent, Child, ParentCols>[] = [];
+    const result: JoinResult<Parent, Joined, ParentCols>[] = [];
     for (const { parent, children } of grouped.values()) {
       const decodedParent = this.#selectedColumns
         ? decodeSelectedRow(parent, this.#parent, this.#selectedColumns)
         : decodeRow(parent, this.#parent);
-      const decodedChildren = children.map((c) => decodeRow(c, this.#child));
-      result.push({
-        ...decodedParent,
-        [JoinSelectBuilder.CHILD_KEY]: decodedChildren,
-      } as JoinResult<Parent, Child, ParentCols>);
+
+      const nested: Record<string, unknown> = { ...decodedParent };
+      childEntryMaps.forEach((childMap, i) => {
+        nested[childMap.name] = children[i]!.map((c) => decodeRow(c, childMap.table));
+      });
+
+      result.push(nested as JoinResult<Parent, Joined, ParentCols>);
     }
 
     return result;
@@ -568,32 +519,30 @@ export class JoinSelectBuilder<
 }
 
 /**
- * Result type for a one-to-many join.
+ * Result type for joined queries.
  * Parent fields are Pick'd if .columns() was used.
- * Child data is always fully present as an array.
+ * Each joined table's data is nested under its table name as an array.
  */
 export type JoinResult<
   Parent extends TableDef<any>,
-  Child extends TableDef<any>,
+  Joined extends TableDef<any>[],
   ParentCols extends keyof InferRow<Parent> = keyof InferRow<Parent>,
-> = Pick<InferRow<Parent>, ParentCols> & { [JoinSelectBuilder.CHILD_KEY]: InferRow<Child>[] };
+> = Pick<InferRow<Parent>, ParentCols> & Record<string, unknown>;
 
 // -----------------------------------------------------------------------
-// Single-row JOIN builder — after .single() on a JoinSelectBuilder
+// Single-row JOIN builder — after .single() on a JoinBuilder
 // -----------------------------------------------------------------------
 
-export class SingleJoinSelectBuilder<
+export class SingleJoinBuilderImpl<
   Parent extends TableDef<any>,
-  Child extends TableDef<any>,
+  Joined extends TableDef<any>[],
   ParentCols extends keyof InferRow<Parent> = keyof InferRow<Parent>,
 > implements Executable {
   #client: DatabaseClient;
   #parent: Parent;
   #parentName: string;
-  #child: Child;
-  #childName: string;
+  #joins: JoinClause[];
   #joinType: JoinType;
-  #joinCondition: Condition;
   #conditions: Condition[];
   #selectedColumns: ParentCols[] | null;
 
@@ -601,99 +550,81 @@ export class SingleJoinSelectBuilder<
     client: DatabaseClient,
     parent: Parent,
     parentName: string,
-    child: Child,
-    childName: string,
+    joins: JoinClause[],
     joinType: JoinType,
-    joinCondition: Condition,
     conditions: Condition[],
     selectedColumns: ParentCols[] | null = null,
   ) {
     this.#client = client;
     this.#parent = parent;
     this.#parentName = parentName;
-    this.#child = child;
-    this.#childName = childName;
+    this.#joins = joins;
     this.#joinType = joinType;
-    this.#joinCondition = joinCondition;
     this.#conditions = conditions;
     this.#selectedColumns = selectedColumns;
   }
 
-  where(condition: Condition): SingleJoinSelectBuilder<Parent, Child, ParentCols> {
-    return new SingleJoinSelectBuilder(
+  where(condition: Condition): SingleJoinBuilderImpl<Parent, Joined, ParentCols> {
+    return new SingleJoinBuilderImpl(
       this.#client,
       this.#parent,
       this.#parentName,
-      this.#child,
-      this.#childName,
+      this.#joins,
       this.#joinType,
-      this.#joinCondition,
       [...this.#conditions, condition],
       this.#selectedColumns,
     );
   }
 
   toSQL(): { sql: string; params: unknown[] } {
-    // Same as JoinSelectBuilder.toSQL() but with LIMIT 1
-    const parentEntries = columnEntries(this.#parent as any);
-    let parentCols: string;
-    if (this.#selectedColumns) {
-      parentCols = this.#selectedColumns
-        .map((k) => `${this.#parentName}.${(this.#parent as any)[k as string].name}`)
-        .join(", ");
-    } else {
-      parentCols = parentEntries.map(([, c]) => `${this.#parentName}.${c.name}`).join(", ");
+    const parentCols = resolveColumns(this.#parent, this.#selectedColumns as string[] | null, this.#parentName);
+
+    const childCols: string[] = [];
+    for (const join of this.#joins) {
+      const entries = columnEntries(join.table as any);
+      for (const [, c] of entries) {
+        childCols.push(`${join.name}.${c.name} AS ${join.name}_${c.name}`);
+      }
     }
 
-    const childEntries = columnEntries(this.#child as any);
-    const childCols = childEntries
-      .map(([, c]) => `${this.#childName}.${c.name} AS ${this.#childName}_${c.name}`)
-      .join(", ");
-
     const joinKeyword = this.#joinType === "left" ? "LEFT JOIN" : "INNER JOIN";
+    const joinClauses: string[] = [];
     const joinParams: unknown[] = [];
-    const joinOn = compileConditions([this.#joinCondition], joinParams);
+    for (const join of this.#joins) {
+      const joinOn = compileConditions([join.condition], joinParams);
+      joinClauses.push(`${joinKeyword} ${join.name} ON ${joinOn}`);
+    }
+
     const whereParams: unknown[] = [];
     const where = compileConditions(this.#conditions, whereParams);
 
-    let sql = `SELECT ${parentCols}${childCols ? ", " + childCols : ""} FROM ${this.#parentName} ${joinKeyword} ${this.#childName} ON ${joinOn}`;
+    let sql = `SELECT ${parentCols}${childCols.length ? ", " + childCols.join(", ") : ""} FROM ${this.#parentName} ${joinClauses.join(" ")}`;
     if (where !== "1=1") sql += ` WHERE ${where}`;
-    sql += " LIMIT 1";
 
     return { sql, params: [...joinParams, ...whereParams] };
   }
 
   /** Returns a single parent with nested children, or null. */
-  execute(): JoinResult<Parent, Child, ParentCols> | null {
+  execute(): JoinResult<Parent, Joined, ParentCols> | null {
     const { sql, params } = this.toSQL();
-    const row = this.#client.prepare(sql).get(...bind(params)) as Record<string, unknown> | null;
-    if (!row) return null;
-
-    // For single(), the LIMIT 1 means we get at most one parent.
-    // But there could still be multiple rows if the join produces them
-    // (e.g. one parent with 3 children = 3 rows, but LIMIT 1 cuts to 1).
-    // This is actually wrong for one-to-many — LIMIT 1 would cut children.
-    // The correct approach: use a subquery or fetch all then take first parent.
-    // For now, we fetch without LIMIT and take the first group.
-
-    // Actually, let me re-approach: for single() on a join, we should NOT
-    // use LIMIT 1 on the JOIN query (it would cut children). Instead,
-    // we add a WHERE on the parent PK and fetch all matching rows, then group.
-    // But we don't know the PK value at this point...
-
-    // Simplest correct approach: don't add LIMIT 1 to the JOIN SQL.
-    // Instead, execute the full join, group, and take the first result.
-    // This is what the full execute() does — we just slice after.
-    const fullSql = this.toSQL().sql.replace(/ LIMIT 1$/, "");
-    const allRows = this.#client.prepare(fullSql).all(...bind(params)) as Record<string, unknown>[];
+    const allRows = this.#client.prepare(sql).all(...bind(params)) as Record<string, unknown>[];
     if (allRows.length === 0) return null;
 
-    // Group by parent PK (same logic as JoinSelectBuilder.execute)
+    // Group by parent PK (same logic as JoinBuilderImpl.execute)
     const parentEntries = columnEntries(this.#parent as any);
-    const childEntries = columnEntries(this.#child as any);
     const pkKey = findPKKey(this.#parent);
     const pkColName = (this.#parent as any)[pkKey].name;
-    const grouped = new Map<unknown, { parent: Record<string, unknown>; children: Record<string, unknown>[] }>();
+
+    const childEntryMaps: { name: string; entries: [string, ColumnDef<any, any>][]; table: TableDef<any> }[] = [];
+    for (const j of this.#joins) {
+      childEntryMaps.push({
+        name: j.name,
+        entries: columnEntries(j.table as any),
+        table: j.table,
+      });
+    }
+
+    const grouped = new Map<unknown, { parent: Record<string, unknown>; children: Record<string, unknown>[][] }>();
 
     for (const r of allRows) {
       const pk = r[pkColName];
@@ -702,32 +633,39 @@ export class SingleJoinSelectBuilder<
         for (const [key, col] of parentEntries) {
           parentRow[key] = r[col.name];
         }
-        grouped.set(pk, { parent: parentRow, children: [] });
+        grouped.set(pk, {
+          parent: parentRow,
+          children: childEntryMaps.map(() => []),
+        });
       }
-      const childRow: Record<string, unknown> = {};
-      let hasNonNullChild = false;
-      for (const [key, col] of childEntries) {
-        const val = r[`${this.#childName}_${col.name}`];
-        childRow[key] = val;
-        if (val != null) hasNonNullChild = true;
-      }
-      if (this.#joinType === "left" && !hasNonNullChild) continue;
-      grouped.get(pk)!.children.push(childRow);
+
+      const group = grouped.get(pk)!;
+      childEntryMaps.forEach((childMap, i) => {
+        const childRow: Record<string, unknown> = {};
+        let hasNonNullChild = false;
+        for (const [key, col] of childMap.entries) {
+          const val = r[`${childMap.name}_${col.name}`];
+          childRow[key] = val;
+          if (val != null) hasNonNullChild = true;
+        }
+        if (this.#joinType === "left" && !hasNonNullChild) return;
+        group.children[i]!.push(childRow);
+      });
     }
 
-    // Take the first group
     const first = grouped.values().next().value;
     if (!first) return null;
 
     const decodedParent = this.#selectedColumns
       ? decodeSelectedRow(first.parent, this.#parent, this.#selectedColumns)
       : decodeRow(first.parent, this.#parent);
-    const decodedChildren = first.children.map((c) => decodeRow(c, this.#child));
 
-    return {
-      ...decodedParent,
-      [JoinSelectBuilder.CHILD_KEY]: decodedChildren,
-    } as JoinResult<Parent, Child, ParentCols>;
+    const nested: Record<string, unknown> = { ...decodedParent };
+    childEntryMaps.forEach((childMap, i) => {
+      nested[childMap.name] = first.children[i]!.map((c) => decodeRow(c, childMap.table));
+    });
+
+    return nested as JoinResult<Parent, Joined, ParentCols>;
   }
 }
 

@@ -4,9 +4,7 @@
 
 // Main entry: flint() factory + sql template
 export { flint, sql } from "./flint";
-export type { ConnectionDetails, SQLExpression, Executable, SelectStage1, JoinSelectStage1 } from "./flint";
-export { JoinSelectBuilder } from "./flint";
-export type { JoinResult } from "./flint";
+export type { ConnectionDetails, SQLExpression, Executable, SelectStage1, JoinSelectStage1, JoinBuilder, SingleJoinBuilder, JoinResult } from "./flint";
 
 // Schema: table/column definitions (flint-orm/table)
 export { text, integer, boolean, json, real } from "./schema/columns";

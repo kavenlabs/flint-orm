@@ -15,8 +15,7 @@ import type { Executable, SelectStage1, JoinSelectStage1 } from "./query/builder
 import type { TableDef } from "./schema/table";
 
 // Re-export Executable so consumers can type their own batch helpers.
-export type { Executable, SelectStage1, JoinSelectStage1 } from "./query/builder";
-export { JoinSelectBuilder } from "./query/builder";
+export type { Executable, SelectStage1, JoinSelectStage1, JoinBuilder, SingleJoinBuilder } from "./query/builder";
 export type { JoinResult } from "./query/builder";
 
 // -----------------------------------------------------------------------

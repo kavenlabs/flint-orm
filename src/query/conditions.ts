@@ -16,7 +16,7 @@ export type Condition =
  * Also supports column-to-column comparison when the second argument is a ColumnDef.
  */
 export function eq<T>(column: ColumnDef<T, any>, value: T): Condition;
-export function eq(left: ColumnDef<any, any>, right: ColumnDef<any, any>): Condition;
+export function eq<T>(left: ColumnDef<T, any>, right: ColumnDef<T, any>): Condition;
 export function eq(left: ColumnDef<any, any>, valueOrColumn: unknown): Condition {
   if (
     valueOrColumn !== null &&

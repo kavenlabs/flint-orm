@@ -33,23 +33,16 @@ const orderItems = table("orderItems", {
   quantity: integer("quantity").notNull(),
 });
 
-// ── Compile-time type tests ────────────────────────────────────────────────
-// These lines will fail to compile if the types are wrong.
-
-// .columns() array form — result should be Pick<InferRow<typeof users>, "name" | "active">
-type _ColArrayResult = InferRow<typeof users> extends { name: string; active: boolean } ? true : false;
-const _colArrayCheck: _ColArrayResult = true;
-
-// .columns() object form — same narrowing
-type _ColObjResult = InferRow<typeof users> extends { name: string; active: boolean } ? true : false;
-const _colObjCheck: _ColObjResult = true;
-
-// .single() return type should be T | null, not T[]
-// (verified at usage site below)
-
 // ── Database setup ─────────────────────────────────────────────────────────
 
 const db = flint({ url: "test.db" });
+
+// ── Compile-time type tests ────────────────────────────────────────────────
+// These lines will fail to compile if the types are wrong.
+// Type-only checks (no runtime execution) to avoid errors before tables exist.
+
+// .single() return type should be T | null, not T[]
+// (verified at usage site below)
 
 db.$client.run(`CREATE TABLE IF NOT EXISTS users (
   id TEXT PRIMARY KEY,
@@ -202,8 +195,7 @@ db.insert(orderItems).values({ id: "oi4", orderId: "o2", productName: "Thingamaj
 
 const ordersWithItems = db
   .leftJoin(orders)
-  .on(orderItems)
-  .on(eq(orders.id, orderItems.orderId))
+  .on(orderItems, eq(orders.id, orderItems.orderId))
   .execute();
 
 console.log("Full nested result:");
@@ -213,8 +205,8 @@ console.log();
 // Verify structure: o1 should have 3 items, o2 should have 1
 const o1 = ordersWithItems.find((r) => r.id === "o1");
 const o2 = ordersWithItems.find((r) => r.id === "o2");
-console.log("o1 items count:", o1?.__children?.length ?? "MISSING");
-console.log("o2 items count:", o2?.__children?.length ?? "MISSING");
+console.log("o1 items count:", (o1 as any)?.orderItems?.length ?? "MISSING");
+console.log("o2 items count:", (o2 as any)?.orderItems?.length ?? "MISSING");
 console.log();
 
 // ── FEATURE 2: .columns() on join — narrows parent, child arrives fully ────
@@ -223,8 +215,7 @@ console.log("── .columns() on join (narrow parent) ──");
 
 const ordersNarrowed = db
   .leftJoin(orders)
-  .on(orderItems)
-  .on(eq(orders.id, orderItems.orderId))
+  .on(orderItems, eq(orders.id, orderItems.orderId))
   .columns(["id", "total"])
   .execute();
 
@@ -233,8 +224,8 @@ console.log(JSON.stringify(ordersNarrowed, null, 2));
 // Should have: { id, total, __children: [...] }
 // Parent should NOT have "userId" — only "id" and "total"
 // Child data should arrive fully (all orderItems fields)
-console.log("Parent keys:", Object.keys(ordersNarrowed[0] ?? {}).filter((k) => k !== "__children"));
-console.log("Child keys:", Object.keys(ordersNarrowed[0]?.__children?.[0] ?? {}));
+console.log("Parent keys:", Object.keys(ordersNarrowed[0] ?? {}).filter((k) => k !== "orderItems"));
+console.log("Child keys:", Object.keys((ordersNarrowed[0] as any)?.orderItems?.[0] ?? {}));
 console.log();
 
 // ── FEATURE 2: innerJoin ───────────────────────────────────────────────────
@@ -246,8 +237,7 @@ db.insert(orders).values({ id: "o3", userId: "u2", total: 0 }).execute();
 
 const innerJoined = db
   .innerJoin(orders)
-  .on(orderItems)
-  .on(eq(orders.id, orderItems.orderId))
+  .on(orderItems, eq(orders.id, orderItems.orderId))
   .execute();
 
 console.log("Inner join result (orders with items only):");
@@ -327,8 +317,7 @@ console.log(
   "join:",
   db
     .leftJoin(orders)
-    .on(orderItems)
-    .on(eq(orders.id, orderItems.orderId))
+    .on(orderItems, eq(orders.id, orderItems.orderId))
     .toSQL(),
 );
 
