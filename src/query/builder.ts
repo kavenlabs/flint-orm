@@ -1058,17 +1058,24 @@ export class InsertValuesBuilder<T extends TableDef<any>> implements InsertStage
 }
 
 /** Full INSERT builder — available after .values() has been called. */
-export class InsertBuilder<T extends TableDef<any>> implements Executable {
+export class InsertBuilder<T extends TableDef<any>, R extends boolean = false> implements Executable {
   #client: DatabaseClient;
   #tableName: string;
   #table: T;
   #row: InsertRow<T>;
+  #returning: boolean;
 
-  constructor(client: DatabaseClient, tableName: string, table: T, row: InsertRow<T>) {
+  constructor(client: DatabaseClient, tableName: string, table: T, row: InsertRow<T>, returning: R = false as R) {
     this.#client = client;
     this.#tableName = tableName;
     this.#table = table;
     this.#row = row;
+    this.#returning = returning;
+  }
+
+  /** Return the inserted row(s) instead of void. */
+  returning(): InsertBuilder<T, true> {
+    return new InsertBuilder(this.#client, this.#tableName, this.#table, this.#row, true);
   }
 
   toSQL(): { sql: string; params: unknown[] } {
@@ -1117,16 +1124,20 @@ export class InsertBuilder<T extends TableDef<any>> implements Executable {
       }
       return c.__internal.encode(value);
     });
-    return {
-      sql: `INSERT INTO ${this.#tableName} (${names}) VALUES (${placeholders})`,
-      params,
-    };
+    let sql = `INSERT INTO ${this.#tableName} (${names}) VALUES (${placeholders})`;
+    if (this.#returning) sql += " RETURNING *";
+    return { sql, params };
   }
 
-  execute(): void {
+  execute(): R extends true ? InferRow<T>[] : void {
     const { sql, params } = this.toSQL();
     try {
+      if (this.#returning) {
+        const rows = this.#client.prepare(sql).all(...bind(params)) as Record<string, unknown>[];
+        return rows.map((r) => decodeRow(r, this.#table)) as any;
+      }
       this.#client.prepare(sql).run(...bind(params));
+      return undefined as any;
     } catch (e) {
       throw new QueryError(`Failed to execute query: ${sql}`, e as Error);
     }
@@ -1160,12 +1171,13 @@ export class UpdateSetBuilder<T extends TableDef<any>> implements UpdateStage1<T
 }
 
 /** Full UPDATE builder — available after .set() has been called. */
-export class UpdateBuilder<T extends TableDef<any>> implements Executable {
+export class UpdateBuilder<T extends TableDef<any>, R extends boolean = false> implements Executable {
   #client: DatabaseClient;
   #tableName: string;
   #table: T;
   #set: Partial<InferRow<T>>;
   #conditions: Condition[];
+  #returning: boolean;
 
   constructor(
     client: DatabaseClient,
@@ -1173,29 +1185,37 @@ export class UpdateBuilder<T extends TableDef<any>> implements Executable {
     table: T,
     set: Partial<InferRow<T>>,
     conditions: Condition[] = [],
+    returning: R = false as R,
   ) {
     this.#client = client;
     this.#tableName = tableName;
     this.#table = table;
     this.#set = set;
     this.#conditions = conditions;
+    this.#returning = returning;
   }
 
-  set(partial: Partial<InferRow<T>>): UpdateBuilder<T> {
+  set(partial: Partial<InferRow<T>>): UpdateBuilder<T, R> {
     return new UpdateBuilder(
       this.#client,
       this.#tableName,
       this.#table,
       { ...this.#set, ...partial },
       this.#conditions,
+      this.#returning,
     );
   }
 
-  where(condition: Condition): UpdateBuilder<T> {
+  where(condition: Condition): UpdateBuilder<T, R> {
     return new UpdateBuilder(this.#client, this.#tableName, this.#table, this.#set, [
       ...this.#conditions,
       condition,
-    ]);
+    ], this.#returning);
+  }
+
+  /** Return the updated row(s) instead of void. */
+  returning(): UpdateBuilder<T, true> {
+    return new UpdateBuilder(this.#client, this.#tableName, this.#table, this.#set, this.#conditions, true);
   }
 
   toSQL(): { sql: string; params: unknown[] } {
@@ -1216,13 +1236,19 @@ export class UpdateBuilder<T extends TableDef<any>> implements Executable {
     let sql = `UPDATE ${this.#tableName} SET ${setClauses.join(", ")}`;
     const where = compileConditions(this.#conditions, params);
     if (where !== "1=1") sql += ` WHERE ${where}`;
+    if (this.#returning) sql += " RETURNING *";
     return { sql, params };
   }
 
-  execute(): void {
+  execute(): R extends true ? InferRow<T>[] : void {
     const { sql, params } = this.toSQL();
     try {
+      if (this.#returning) {
+        const rows = this.#client.prepare(sql).all(...bind(params)) as Record<string, unknown>[];
+        return rows.map((r) => decodeRow(r, this.#table)) as any;
+      }
       this.#client.prepare(sql).run(...bind(params));
+      return undefined as any;
     } catch (e) {
       throw new QueryError(`Failed to execute query: ${sql}`, e as Error);
     }
@@ -1233,24 +1259,31 @@ export class UpdateBuilder<T extends TableDef<any>> implements Executable {
 // DELETE
 // -----------------------------------------------------------------------
 
-export class DeleteBuilder<T extends TableDef<any>> implements Executable {
+export class DeleteBuilder<T extends TableDef<any>, R extends boolean = false> implements Executable {
   #client: DatabaseClient;
   #tableName: string;
   #table: T;
   #conditions: Condition[];
+  #returning: boolean;
 
-  constructor(client: DatabaseClient, tableName: string, table: T, conditions: Condition[] = []) {
+  constructor(client: DatabaseClient, tableName: string, table: T, conditions: Condition[] = [], returning: R = false as R) {
     this.#client = client;
     this.#tableName = tableName;
     this.#table = table;
     this.#conditions = conditions;
+    this.#returning = returning;
   }
 
-  where(condition: Condition): DeleteBuilder<T> {
+  where(condition: Condition): DeleteBuilder<T, R> {
     return new DeleteBuilder(this.#client, this.#tableName, this.#table, [
       ...this.#conditions,
       condition,
-    ]);
+    ], this.#returning);
+  }
+
+  /** Return the deleted row(s) instead of void. */
+  returning(): DeleteBuilder<T, true> {
+    return new DeleteBuilder(this.#client, this.#tableName, this.#table, this.#conditions, true);
   }
 
   toSQL(): { sql: string; params: unknown[] } {
@@ -1258,13 +1291,19 @@ export class DeleteBuilder<T extends TableDef<any>> implements Executable {
     let sql = `DELETE FROM ${this.#tableName}`;
     const where = compileConditions(this.#conditions, params);
     if (where !== "1=1") sql += ` WHERE ${where}`;
+    if (this.#returning) sql += " RETURNING *";
     return { sql, params };
   }
 
-  execute(): void {
+  execute(): R extends true ? InferRow<T>[] : void {
     const { sql, params } = this.toSQL();
     try {
+      if (this.#returning) {
+        const rows = this.#client.prepare(sql).all(...bind(params)) as Record<string, unknown>[];
+        return rows.map((r) => decodeRow(r, this.#table)) as any;
+      }
       this.#client.prepare(sql).run(...bind(params));
+      return undefined as any;
     } catch (e) {
       throw new QueryError(`Failed to execute query: ${sql}`, e as Error);
     }
