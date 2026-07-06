@@ -9,12 +9,14 @@ import {
   InsertValuesBuilder,
   UpdateSetBuilder,
   DeleteBuilder,
+  JoinStage1,
 } from "./query/builder";
-import type { Executable, SelectStage1, InsertStage1, UpdateStage1 } from "./query/builder";
+import type { Executable, SelectStage1, InsertStage1, UpdateStage1, JoinSelectStage1 } from "./query/builder";
 import type { TableDef } from "./schema/table";
 
 // Re-export Executable so consumers can type their own batch helpers.
-export type { Executable, SelectStage1, InsertStage1, UpdateStage1 } from "./query/builder";
+export type { Executable, SelectStage1, InsertStage1, UpdateStage1, JoinSelectStage1, JoinBuilder, SingleJoinBuilder } from "./query/builder";
+export type { JoinResult } from "./query/builder";
 
 // -----------------------------------------------------------------------
 // Connection details
@@ -40,17 +42,11 @@ export function flint(details: ConnectionDetails) {
      */
     select: (): SelectStage1 => new SelectFromBuilder(client),
 
-    /**
-     * Start an INSERT — call .values(row) next.
-     * Returns InsertStage1: only .values() is available until a row is supplied.
-     */
+    /** Start an INSERT — call .values(row) next. */
     insert: <T extends TableDef<any>>(table: T): InsertStage1<T> =>
       new InsertValuesBuilder<T>(client, (table as any)._.name, table),
 
-    /**
-     * Start an UPDATE — call .set(partial) next.
-     * Returns UpdateStage1: only .set() is available until values are supplied.
-     */
+    /** Start an UPDATE — call .set(partial) next. */
     update: <T extends TableDef<any>>(table: T): UpdateStage1<T> =>
       new UpdateSetBuilder<T>(client, (table as any)._.name, table),
 

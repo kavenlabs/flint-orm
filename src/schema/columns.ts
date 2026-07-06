@@ -18,6 +18,8 @@ export interface ColumnDef<T, S extends string = string> {
   default(value: T): ColumnDef<T, S>;
   /** Set a dynamic default — called when value is undefined during INSERT. */
   defaultFn(fn: () => T): ColumnDef<T, S>;
+  /** Define a foreign key reference to another table's column. */
+  references(target: ColumnDef<any, any>): ColumnDef<T, S>;
   /** @internal Implementation details. Do not access directly. */
   readonly __internal: {
     /** Phantom — exists only at the type level, never accessed at runtime. */
@@ -34,6 +36,9 @@ export interface ColumnDef<T, S extends string = string> {
     readonly isAutoIncrement: boolean;
     readonly hasDefaultNow: boolean;
     readonly hasOnUpdate: boolean;
+    /** Foreign key reference — table and column names. */
+    readonly referencesTable: string | null;
+    readonly referencesColumn: string | null;
     /** Converts logical value → storage value. Called by the builder. */
     readonly encode: (value: T) => unknown;
     /** Converts storage value → logical value. Called by the builder. */
@@ -102,6 +107,8 @@ function makeColumn<T, S extends string>(config: {
       isAutoIncrement: false,
       hasDefaultNow: false,
       hasOnUpdate: false,
+      referencesTable: null as string | null,
+      referencesColumn: null as string | null,
       encode: config.encode,
       decode: config.decode,
       tableName: null as string | null,
@@ -124,6 +131,9 @@ function makeColumn<T, S extends string>(config: {
     },
     defaultFn(fn: () => T) {
       return { ...this, __internal: { ...this.__internal, hasDefault: true, defaultFn: fn } };
+    },
+    references(target: ColumnDef<any, any>) {
+      return { ...this, __internal: { ...this.__internal, referencesTable: target.__internal.tableName, referencesColumn: target.name } };
     },
   };
 

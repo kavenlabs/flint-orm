@@ -49,6 +49,9 @@ export function table<T extends Record<string, ColumnDef<any, any>>>(
       defaultFn(fn: () => any) {
         return { ...this, __internal: { ...stampedInternal, hasDefault: true, defaultFn: fn } };
       },
+      references(target: ColumnDef<any, any>) {
+        return { ...this, __internal: { ...stampedInternal, referencesTable: target.__internal.tableName, referencesColumn: target.name } };
+      },
     } as ColumnDef<any, any>;
 
     // Preserve autoIncrement if the original column had it (integer columns)
@@ -154,6 +157,9 @@ export function snakeCaseTable<T extends Record<string, ColumnDef<any, any>>>(
       defaultFn(fn: () => any) {
         return { ...this, __internal: { ...stampedInternal, hasDefault: true, defaultFn: fn } };
       },
+      references(target: ColumnDef<any, any>) {
+        return { ...this, __internal: { ...stampedInternal, referencesTable: target.__internal.tableName, referencesColumn: target.name } };
+      },
     } as ColumnDef<any, any>;
 
     if ("autoIncrement" in col) {
@@ -171,7 +177,6 @@ export function snakeCaseTable<T extends Record<string, ColumnDef<any, any>>>(
         return { ...this, __internal: { ...stampedInternal, hasOnUpdate: true } };
       };
     }
-
     converted[key] = stampedCol;
   }
 

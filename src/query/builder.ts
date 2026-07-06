@@ -8,7 +8,7 @@
 import type { SQLQueryBindings } from "bun:sqlite";
 import type { ColumnDef } from "../schema/columns";
 import type { Condition } from "./conditions";
-import { compileConditions } from "./conditions";
+import { compileConditions, eq } from "./conditions";
 import type { TableDef, InferRow, InsertRow } from "../schema/table";
 import { ValidationError, QueryError } from "../errors";
 
@@ -55,6 +55,34 @@ function findPKKey(tbl: TableDef<any>): string {
     if (col.__internal.isPrimaryKey) return key;
   }
   throw new ValidationError("Table has no primary key column");
+}
+
+/**
+ * Resolve a join condition from foreign key references.
+ * Scans the child table for columns that reference the parent table.
+ * Returns the first matching condition.
+ */
+function resolveForeignKeyCondition(
+  parent: TableDef<any>,
+  parentName: string,
+  child: TableDef<any>,
+  childName: string,
+): Condition {
+  for (const [, col] of columnEntries(child as any)) {
+    if (
+      col.__internal.referencesTable === parentName &&
+      col.__internal.referencesColumn
+    ) {
+      // Find the parent column that matches the referenced column name
+      const parentCol = (parent as any)[col.__internal.referencesColumn] as ColumnDef<any, any>;
+      if (parentCol) {
+        return eq(parentCol, col);
+      }
+    }
+  }
+  throw new ValidationError(
+    `No foreign key reference found from "${childName}" to "${parentName}". Use .references() on the child table or provide an explicit condition.`
+  );
 }
 
 /** Resolve column list SQL from selected columns or all entries. */
@@ -425,6 +453,8 @@ interface JoinClause {
  */
 export interface JoinSelectStage1<Parent extends TableDef<any>> {
   on<Child extends TableDef<any>>(child: Child, condition: Condition): JoinBuilder<Parent, [Child]>;
+  /** Auto-join: infer condition from foreign key references on the child table. */
+  on<Child extends TableDef<any>>(child: Child): JoinBuilder<Parent, [Child]>;
 }
 
 /**
@@ -439,6 +469,10 @@ export interface JoinBuilder<
   on<NewChild extends TableDef<any>>(
     child: NewChild,
     condition: Condition,
+  ): JoinBuilder<Parent, [...Joined, NewChild], ParentCols>;
+  /** Auto-join: infer condition from foreign key references on the child table. */
+  on<NewChild extends TableDef<any>>(
+    child: NewChild,
   ): JoinBuilder<Parent, [...Joined, NewChild], ParentCols>;
   columns<K extends keyof InferRow<Parent>>(keys: K[]): JoinBuilder<Parent, Joined, K>;
   where(condition: Condition): JoinBuilder<Parent, Joined, ParentCols>;
@@ -492,14 +526,15 @@ export class JoinStage1<Parent extends TableDef<any>> implements JoinSelectStage
    */
   on<Child extends TableDef<any>>(
     child: Child,
-    condition: Condition,
+    condition?: Condition,
   ): JoinBuilder<Parent, [Child]> {
     const childName = (child as any)._.name as string;
+    const resolvedCondition = condition ?? resolveForeignKeyCondition(this.#parent, this.#parentName, child, childName);
     return new JoinBuilderImpl(
       this.#client,
       this.#parent,
       this.#parentName,
-      [{ table: child, name: childName, condition }],
+      [{ table: child, name: childName, condition: resolvedCondition }],
       this.#joinType,
     );
   }
@@ -557,14 +592,15 @@ export class JoinBuilderImpl<
    */
   on<NewChild extends TableDef<any>>(
     child: NewChild,
-    condition: Condition,
+    condition?: Condition,
   ): JoinBuilder<Parent, [...Joined, NewChild], ParentCols> {
     const childName = (child as any)._.name as string;
+    const resolvedCondition = condition ?? resolveForeignKeyCondition(this.#parent, this.#parentName, child, childName);
     return new JoinBuilderImpl(
       this.#client,
       this.#parent,
       this.#parentName,
-      [...this.#joins, { table: child, name: childName, condition }],
+      [...this.#joins, { table: child, name: childName, condition: resolvedCondition }],
       this.#joinType,
       this.#conditions,
       this.#selectedColumns,
@@ -1001,7 +1037,7 @@ export class SingleJoinBuilderImpl<
 
 /** First phase: only .values() is available. Prevents .toSQL()/.execute() before supplying a row. */
 export interface InsertStage1<T extends TableDef<any>> {
-  values(row: InferRow<T>): InsertBuilder<T>;
+  values(row: InsertRow<T>): InsertBuilder<T>;
 }
 
 /** Lightweight wrapper that only exposes .values(). */
@@ -1016,7 +1052,7 @@ export class InsertValuesBuilder<T extends TableDef<any>> implements InsertStage
     this.#table = table;
   }
 
-  values(row: InferRow<T>): InsertBuilder<T> {
+  values(row: InsertRow<T>): InsertBuilder<T> {
     return new InsertBuilder(this.#client, this.#tableName, this.#table, row);
   }
 }
@@ -1026,9 +1062,9 @@ export class InsertBuilder<T extends TableDef<any>> implements Executable {
   #client: DatabaseClient;
   #tableName: string;
   #table: T;
-  #row: InferRow<T>;
+  #row: InsertRow<T>;
 
-  constructor(client: DatabaseClient, tableName: string, table: T, row: InferRow<T>) {
+  constructor(client: DatabaseClient, tableName: string, table: T, row: InsertRow<T>) {
     this.#client = client;
     this.#tableName = tableName;
     this.#table = table;
