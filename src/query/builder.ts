@@ -868,9 +868,36 @@ export class InsertBuilder<T extends TableDef<any>> implements Executable {
   toSQL(): { sql: string; params: unknown[] } {
     if (!this.#row) throw new Error("Missing .values() call");
     const entries = columnEntries(this.#table as any);
-    const names = entries.map(([, c]) => c.name).join(", ");
-    const placeholders = entries.map(() => "?").join(", ");
-    const params = entries.map(([key, c]) =>
+
+    // Filter out columns with defaults when value is undefined
+    const inserts: [string, ColumnDef<any, any>][] = [];
+    for (const [key, c] of entries) {
+      const value = (this.#row as any)[key];
+      if (value === undefined && c.__internal.hasDefault) {
+        // Skip — let SQLite handle the default
+        continue;
+      }
+      if (value === undefined && c.__internal.isAutoIncrement) {
+        // Skip — let SQLite handle autoincrement
+        continue;
+      }
+      inserts.push([key, c]);
+    }
+
+    if (inserts.length === 0) {
+      // All columns have defaults — insert with defaults only
+      const allDefault = entries.filter(([, c]) => c.__internal.hasDefault || c.__internal.isAutoIncrement);
+      const names = allDefault.map(([, c]) => c.name).join(", ");
+      const placeholders = allDefault.map(() => "DEFAULT").join(", ");
+      return {
+        sql: `INSERT INTO ${this.#tableName} (${names}) VALUES (${placeholders})`,
+        params: [],
+      };
+    }
+
+    const names = inserts.map(([, c]) => c.name).join(", ");
+    const placeholders = inserts.map(() => "?").join(", ");
+    const params = inserts.map(([key, c]) =>
       c.__internal.encode((this.#row as any)[key]),
     );
     return {

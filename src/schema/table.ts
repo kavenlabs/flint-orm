@@ -33,15 +33,30 @@ export function table<T extends Record<string, ColumnDef<any, any>>>(
       name: col.name,
       __internal: stampedInternal,
       primaryKey() {
-        return { ...stampedCol, __internal: { ...stampedInternal, isPrimaryKey: true } };
+        return { ...this, __internal: { ...stampedInternal, isPrimaryKey: true } };
       },
       notNull() {
-        return { ...stampedCol, __internal: { ...stampedInternal, isNotNull: true } };
+        return { ...this, __internal: { ...stampedInternal, isNotNull: true } };
       },
       unique() {
-        return { ...stampedCol, __internal: { ...stampedInternal, isUnique: true } };
+        return { ...this, __internal: { ...stampedInternal, isUnique: true } };
       },
-    };
+      default(value: any) {
+        return { ...this, __internal: { ...stampedInternal, hasDefault: true, defaultValue: value } };
+      },
+      defaultFn(fn: () => any) {
+        return { ...this, __internal: { ...stampedInternal, hasDefault: true, defaultFn: fn } };
+      },
+    } as ColumnDef<any, any>;
+
+    // Preserve autoIncrement if the original column had it (integer columns)
+    if ("autoIncrement" in col) {
+      (stampedCol as any).autoIncrement = function () {
+        return { ...this, __internal: { ...stampedInternal, isAutoIncrement: true } };
+      };
+    }
+
+    stamped[key] = stampedCol;
     stamped[key] = stampedCol;
   }
   return Object.assign(stamped, {
