@@ -14,6 +14,7 @@ export type Condition =
   | { type: "isNotNull"; column: ColumnDef<any, any> }
   | { type: "like"; column: ColumnDef<any, any>; pattern: string }
   | { type: "glob"; column: ColumnDef<any, any>; pattern: string }
+  | { type: "between"; column: ColumnDef<any, any>; low: unknown; high: unknown }
   | { type: "and"; conditions: Condition[] }
   | { type: "or"; conditions: Condition[] };
 
@@ -82,6 +83,13 @@ export function glob(column: ColumnDef<any, any>, pattern: string): Condition {
   return { type: "glob", column, pattern };
 }
 
+/**
+ * Range check — column value must be between low and high (inclusive).
+ */
+export function between<T>(column: ColumnDef<T, any>, low: T, high: T): Condition {
+  return { type: "between", column, low, high };
+}
+
 // -----------------------------------------------------------------------
 // Internal: compile a Condition tree to a SQL fragment + params array.
 // Encode is applied to every value at this single chokepoint.
@@ -126,6 +134,10 @@ export function compileCondition(
     case "glob":
       params.push(cond.pattern);
       return `${cond.column.name} GLOB ?`;
+    case "between":
+      params.push(cond.column.__internal.encode(cond.low));
+      params.push(cond.column.__internal.encode(cond.high));
+      return `${cond.column.name} BETWEEN ? AND ?`;
     case "and":
       return cond.conditions
         .map((c) => compileCondition(c, params))

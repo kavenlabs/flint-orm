@@ -101,6 +101,7 @@ function extractColumns(cond: Condition): ColumnDef<any, any>[] {
     case "isNotNull":
     case "like":
     case "glob":
+    case "between":
       return [cond.column];
     case "and":
     case "or":

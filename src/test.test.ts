@@ -5,7 +5,7 @@
 // -----------------------------------------------------------------------
 
 import { flint } from "./flint";
-import { eq, and, isNotNull, like, glob } from "./query/conditions";
+import { eq, and, isNotNull, like, glob, between } from "./query/conditions";
 import { text, boolean, json, integer, date } from "./schema/columns";
 import { table } from "./schema/table";
 import { ValidationError } from "./errors";
@@ -479,6 +479,33 @@ console.log("GLOB 'a*':", globLower.map((r) => r.name));
 // toSQL examples
 console.log("like SQL:", db.select().from(users).where(like(users.name, "%test%")).toSQL());
 console.log("glob SQL:", db.select().from(users).where(glob(users.name, "*.txt")).toSQL());
+
+console.log();
+
+// ── FEATURE 7: between condition ───────────────────────────────────────────
+
+console.log("── between ──");
+
+// Query orders with total between 100 and 200 (inclusive)
+const betweenResult = db
+  .select()
+  .from(orders)
+  .where(between(orders.total, 100, 200))
+  .execute();
+console.log("BETWEEN 100 AND 200:", betweenResult.map((r) => ({ id: r.id, total: r.total })));
+// Should match: o1 (total: 100)
+
+// Query orders with total between 0 and 150
+const betweenLow = db
+  .select()
+  .from(orders)
+  .where(between(orders.total, 0, 150))
+  .execute();
+console.log("BETWEEN 0 AND 150:", betweenLow.map((r) => ({ id: r.id, total: r.total })));
+// Should match: o1 (100)
+
+// toSQL example
+console.log("between SQL:", db.select().from(orders).where(between(orders.total, 50, 300)).toSQL());
 
 console.log();
 
