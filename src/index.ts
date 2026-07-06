@@ -27,3 +27,6 @@ export type { InferRow, InsertRow, TableDef } from "./schema/table";
 // Conditions: eq, and, or, isIn, isNotIn, isNull, isNotNull, like, glob, between (flint-orm/conditions)
 export { eq, and, or, isIn, isNotIn, isNull, isNotNull, like, glob, between } from "./query/conditions";
 export type { Condition } from "./query/conditions";
+
+// Aggregates: count, countColumn, sum, avg, min, max (flint-orm/aggregates)
+export { count, countColumn, sum, avg, min, max } from "./query/aggregates";

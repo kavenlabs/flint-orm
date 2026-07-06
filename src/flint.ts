@@ -12,7 +12,10 @@ import {
   JoinStage1,
 } from "./query/builder";
 import type { Executable, SelectStage1, InsertStage1, UpdateStage1, JoinSelectStage1 } from "./query/builder";
+import { count, countColumn, sum, avg, min, max } from "./query/aggregates";
 import type { TableDef } from "./schema/table";
+import type { Condition } from "./query/conditions";
+import type { ColumnDef } from "./schema/columns";
 
 // Re-export Executable so consumers can type their own batch helpers.
 export type { Executable, SelectStage1, InsertStage1, UpdateStage1, JoinSelectStage1, JoinBuilder, SingleJoinBuilder } from "./query/builder";
@@ -86,6 +89,30 @@ export function flint(details: ConnectionDetails) {
       });
       tx();
     },
+
+    /** count(*) — count all rows in the table. */
+    count: <T extends TableDef<any>>(table: T, condition?: Condition) =>
+      count(client, table, condition),
+
+    /** count(column) — count non-null values of a column. */
+    countColumn: <T extends TableDef<any>, C extends ColumnDef<any, any>>(table: T, column: C, condition?: Condition) =>
+      countColumn(client, table, column, condition),
+
+    /** sum(column) — sum of non-null values. */
+    sum: <T extends TableDef<any>, C extends ColumnDef<any, any>>(table: T, column: C, condition?: Condition) =>
+      sum(client, table, column, condition),
+
+    /** avg(column) — average of non-null values. */
+    avg: <T extends TableDef<any>, C extends ColumnDef<any, any>>(table: T, column: C, condition?: Condition) =>
+      avg(client, table, column, condition),
+
+    /** min(column) — minimum non-null value. */
+    min: <T extends TableDef<any>, C extends ColumnDef<any, any>>(table: T, column: C, condition?: Condition) =>
+      min(client, table, column, condition),
+
+    /** max(column) — maximum non-null value. */
+    max: <T extends TableDef<any>, C extends ColumnDef<any, any>>(table: T, column: C, condition?: Condition) =>
+      max(client, table, column, condition),
 
     /** Direct access to the underlying client (escape hatch). */
     $client: client,

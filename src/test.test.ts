@@ -541,6 +541,61 @@ console.log("distinct SQL:", db.select().from(orders).columns(["userId"]).distin
 
 console.log();
 
+// ── FEATURE 9: aggregates ──────────────────────────────────────────────────
+
+console.log("── aggregates ──");
+
+// count(*) - all orders
+const totalOrders = db.count(orders);
+console.log("count(*):", totalOrders);
+// Should be: 5
+
+// count(*) with condition - orders with total between 50 and 150
+const midRangeOrders = db.count(orders, between(orders.total, 50, 150));
+console.log("count(*) WHERE total BETWEEN 50 AND 150:", midRangeOrders);
+// Should be: 3 (o1: 100, o4: 50, o5: 75)
+
+// count(column) - non-null userId values
+const userIdCount = db.countColumn(orders, orders.userId);
+console.log("count(userId):", userIdCount);
+// Should be: 5
+
+// sum(column) - total of all orders
+const totalRevenue = db.sum(orders, orders.total);
+console.log("sum(total):", totalRevenue);
+// Should be: 100 + 200 + 75 + 50 + 75 = 500
+
+// sum(column) with condition - sum of orders between 50 and 150
+const midRangeRevenue = db.sum(orders, orders.total, between(orders.total, 50, 150));
+console.log("sum(total) WHERE total BETWEEN 50 AND 150:", midRangeRevenue);
+// Should be: 100 + 50 + 75 = 225
+
+// avg(column) - average order total
+const avgOrder = db.avg(orders, orders.total);
+console.log("avg(total):", avgOrder);
+// Should be: 100
+
+// min(column) - minimum order total
+const minOrder = db.min(orders, orders.total);
+console.log("min(total):", minOrder);
+// Should be: 50
+
+// max(column) - maximum order total
+const maxOrder = db.max(orders, orders.total);
+console.log("max(total):", maxOrder);
+// Should be: 200
+
+// Multiple aggregates with Promise.all
+const [count2, sum2, avg2] = await Promise.all([
+  db.count(orders),
+  db.sum(orders, orders.total),
+  db.avg(orders, orders.total),
+]);
+console.log("Promise.all:", { count: count2, sum: sum2, avg: avg2 });
+// Should be: { count: 5, sum: 500, avg: 100 }
+
+console.log();
+
 // ── Cleanup ────────────────────────────────────────────────────────────────
 
 db.$client.close();
