@@ -5,7 +5,7 @@
 // -----------------------------------------------------------------------
 
 import { flint } from "./flint";
-import { eq, and, isNotNull } from "./query/conditions";
+import { eq, and, isNotNull, like, glob } from "./query/conditions";
 import { text, boolean, json, integer, date } from "./schema/columns";
 import { table } from "./schema/table";
 import { ValidationError } from "./errors";
@@ -431,6 +431,54 @@ try {
 } catch (e) {
   console.log("✗ should not have thrown:", (e as Error).message);
 }
+
+console.log();
+
+// ── FEATURE 6: like / glob conditions ──────────────────────────────────────
+
+console.log("── like / glob ──");
+
+// Insert test data
+db.insert(users).values({ id: "u4", name: "Charlie", active: true, metadata: null as any }).execute();
+db.insert(users).values({ id: "u5", name: "David", active: false, metadata: null as any }).execute();
+
+// LIKE: case-insensitive, % = any chars, _ = single char
+const likeResult = db
+  .select()
+  .from(users)
+  .where(like(users.name, "%li%"))
+  .execute();
+console.log("LIKE '%li%':", likeResult.map((r) => r.name));
+// Should match: Alice, Charlie
+
+const likeExact = db
+  .select()
+  .from(users)
+  .where(like(users.name, "Al_ce"))
+  .execute();
+console.log("LIKE 'Al_ce':", likeExact.map((r) => r.name));
+// Should match: Alice
+
+// GLOB: case-sensitive, * = any chars, ? = single char
+const globResult = db
+  .select()
+  .from(users)
+  .where(glob(users.name, "A*"))
+  .execute();
+console.log("GLOB 'A*':", globResult.map((r) => r.name));
+// Should match: Alice (case-sensitive)
+
+const globLower = db
+  .select()
+  .from(users)
+  .where(glob(users.name, "a*"))
+  .execute();
+console.log("GLOB 'a*':", globLower.map((r) => r.name));
+// Should match: nothing (case-sensitive, no lowercase names starting with 'a')
+
+// toSQL examples
+console.log("like SQL:", db.select().from(users).where(like(users.name, "%test%")).toSQL());
+console.log("glob SQL:", db.select().from(users).where(glob(users.name, "*.txt")).toSQL());
 
 console.log();
 

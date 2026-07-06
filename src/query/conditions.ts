@@ -12,6 +12,8 @@ export type Condition =
   | { type: "notIn"; column: ColumnDef<any, any>; values: unknown[] }
   | { type: "isNull"; column: ColumnDef<any, any> }
   | { type: "isNotNull"; column: ColumnDef<any, any> }
+  | { type: "like"; column: ColumnDef<any, any>; pattern: string }
+  | { type: "glob"; column: ColumnDef<any, any>; pattern: string }
   | { type: "and"; conditions: Condition[] }
   | { type: "or"; conditions: Condition[] };
 
@@ -62,6 +64,24 @@ export function isNotNull(column: ColumnDef<any, any>): Condition {
   return { type: "isNotNull", column };
 }
 
+/**
+ * Pattern match using LIKE.
+ * Use `%` for any sequence of characters, `_` for any single character.
+ * Case-insensitive by default in SQLite.
+ */
+export function like(column: ColumnDef<any, any>, pattern: string): Condition {
+  return { type: "like", column, pattern };
+}
+
+/**
+ * Pattern match using GLOB.
+ * Use `*` for any sequence of characters, `?` for any single character.
+ * Case-sensitive (unlike LIKE).
+ */
+export function glob(column: ColumnDef<any, any>, pattern: string): Condition {
+  return { type: "glob", column, pattern };
+}
+
 // -----------------------------------------------------------------------
 // Internal: compile a Condition tree to a SQL fragment + params array.
 // Encode is applied to every value at this single chokepoint.
@@ -100,6 +120,12 @@ export function compileCondition(
       return `${cond.column.name} IS NULL`;
     case "isNotNull":
       return `${cond.column.name} IS NOT NULL`;
+    case "like":
+      params.push(cond.pattern);
+      return `${cond.column.name} LIKE ?`;
+    case "glob":
+      params.push(cond.pattern);
+      return `${cond.column.name} GLOB ?`;
     case "and":
       return cond.conditions
         .map((c) => compileCondition(c, params))

@@ -24,6 +24,6 @@ export type {
 export { table, snakeCase } from "./schema/table";
 export type { InferRow, InsertRow, TableDef } from "./schema/table";
 
-// Conditions: eq, and, or, isIn, isNotIn, isNull, isNotNull (flint-orm/conditions)
-export { eq, and, or, isIn, isNotIn, isNull, isNotNull } from "./query/conditions";
+// Conditions: eq, and, or, isIn, isNotIn, isNull, isNotNull, like, glob (flint-orm/conditions)
+export { eq, and, or, isIn, isNotIn, isNull, isNotNull, like, glob } from "./query/conditions";
 export type { Condition } from "./query/conditions";

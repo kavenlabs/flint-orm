@@ -99,10 +99,14 @@ function extractColumns(cond: Condition): ColumnDef<any, any>[] {
     case "notIn":
     case "isNull":
     case "isNotNull":
+    case "like":
+    case "glob":
       return [cond.column];
     case "and":
     case "or":
       return cond.conditions.flatMap(extractColumns);
+    default:
+      return [];
   }
 }
 
