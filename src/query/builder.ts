@@ -10,6 +10,7 @@ import type { ColumnDef } from "../schema/columns";
 import type { Condition } from "./conditions";
 import { compileConditions } from "./conditions";
 import type { TableDef, InferRow, InsertRow } from "../schema/table";
+import { ValidationError, QueryError } from "../errors";
 
 // -----------------------------------------------------------------------
 // Shared helpers
@@ -56,7 +57,7 @@ function findPKKey(tbl: TableDef<any>): string {
   for (const [key, col] of columnEntries(tbl as any)) {
     if (col.__internal.isPrimaryKey) return key;
   }
-  throw new Error("Table has no primary key column");
+  throw new ValidationError("Table has no primary key column");
 }
 
 /** Resolve column list SQL from selected columns or all entries. */
@@ -231,11 +232,15 @@ export class SelectBuilder<T extends TableDef<any>, C extends keyof InferRow<T> 
 
   execute(): Pick<InferRow<T>, C>[] {
     const { sql, params } = this.toSQL();
-    const rows = this.#client.prepare(sql).all(...bind(params)) as Record<string, unknown>[];
-    if (this.#selectedColumns) {
-      return rows.map((r) => decodeSelectedRow(r, this.#table, this.#selectedColumns!));
+    try {
+      const rows = this.#client.prepare(sql).all(...bind(params)) as Record<string, unknown>[];
+      if (this.#selectedColumns) {
+        return rows.map((r) => decodeSelectedRow(r, this.#table, this.#selectedColumns!));
+      }
+      return rows.map((r) => decodeRow(r, this.#table));
+    } catch (e) {
+      throw new QueryError(`Failed to execute query: ${sql}`, e as Error);
     }
-    return rows.map((r) => decodeRow(r, this.#table));
   }
 }
 
@@ -301,12 +306,16 @@ export class SingleSelectBuilder<T extends TableDef<any>, C extends keyof InferR
   /** Returns a single row or null — never throws on empty results. */
   execute(): Pick<InferRow<T>, C> | null {
     const { sql, params } = this.toSQL();
-    const row = this.#client.prepare(sql).get(...bind(params)) as Record<string, unknown> | null;
-    if (!row) return null;
-    if (this.#selectedColumns) {
-      return decodeSelectedRow(row, this.#table, this.#selectedColumns);
+    try {
+      const row = this.#client.prepare(sql).get(...bind(params)) as Record<string, unknown> | null;
+      if (!row) return null;
+      if (this.#selectedColumns) {
+        return decodeSelectedRow(row, this.#table, this.#selectedColumns);
+      }
+      return decodeRow(row, this.#table) as Pick<InferRow<T>, C>;
+    } catch (e) {
+      throw new QueryError(`Failed to execute query: ${sql}`, e as Error);
     }
-    return decodeRow(row, this.#table) as Pick<InferRow<T>, C>;
   }
 }
 
@@ -585,68 +594,73 @@ export class JoinBuilderImpl<
 
   execute(): JoinResult<Parent, Joined, ParentCols>[] {
     const { sql, params } = this.toSQL();
-    const rows = this.#client.prepare(sql).all(...bind(params)) as Record<string, unknown>[];
+    try {
+      const rows = this.#client.prepare(sql).all(...bind(params)) as Record<string, unknown>[];
 
-    // Group flat rows by parent PK
-    const parentEntries = columnEntries(this.#parent as any);
-    const pkKey = findPKKey(this.#parent);
-    const pkColName = (this.#parent as any)[pkKey].name;
+      // Group flat rows by parent PK
+      const parentEntries = columnEntries(this.#parent as any);
+      const pkKey = findPKKey(this.#parent);
+      const pkColName = (this.#parent as any)[pkKey].name;
 
-    // Build child entry maps for each join
-    const childEntryMaps: { name: string; entries: [string, ColumnDef<any, any>][]; table: TableDef<any> }[] = [];
-    for (const j of this.#joins) {
-      childEntryMaps.push({
-        name: j.name,
-        entries: columnEntries(j.table as any),
-        table: j.table,
-      });
-    }
-
-    const grouped = new Map<unknown, { parent: Record<string, unknown>; children: Record<string, unknown>[][] }>();
-
-    for (const row of rows) {
-      const pk = row[pkColName];
-      if (!grouped.has(pk)) {
-        const parentRow: Record<string, unknown> = {};
-        for (const [key, col] of parentEntries) {
-          parentRow[key] = row[col.name];
-        }
-        grouped.set(pk, {
-          parent: parentRow,
-          children: childEntryMaps.map(() => []),
+      // Build child entry maps for each join
+      const childEntryMaps: { name: string; entries: [string, ColumnDef<any, any>][]; table: TableDef<any> }[] = [];
+      for (const j of this.#joins) {
+        childEntryMaps.push({
+          name: j.name,
+          entries: columnEntries(j.table as any),
+          table: j.table,
         });
       }
 
-      const group = grouped.get(pk)!;
-      childEntryMaps.forEach((childMap, i) => {
-        const childRow: Record<string, unknown> = {};
-        let hasNonNullChild = false;
-        for (const [key, col] of childMap.entries) {
-          const val = row[`${childMap.name}_${col.name}`];
-          childRow[key] = val;
-          if (val != null) hasNonNullChild = true;
+      const grouped = new Map<unknown, { parent: Record<string, unknown>; children: Record<string, unknown>[][] }>();
+
+      for (const row of rows) {
+        const pk = row[pkColName];
+        if (!grouped.has(pk)) {
+          const parentRow: Record<string, unknown> = {};
+          for (const [key, col] of parentEntries) {
+            parentRow[key] = row[col.name];
+          }
+          grouped.set(pk, {
+            parent: parentRow,
+            children: childEntryMaps.map(() => []),
+          });
         }
-        if (this.#joinType === "left" && !hasNonNullChild) return;
-        group.children[i]!.push(childRow);
-      });
+
+        const group = grouped.get(pk)!;
+        childEntryMaps.forEach((childMap, i) => {
+          const childRow: Record<string, unknown> = {};
+          let hasNonNullChild = false;
+          for (const [key, col] of childMap.entries) {
+            const val = row[`${childMap.name}_${col.name}`];
+            childRow[key] = val;
+            if (val != null) hasNonNullChild = true;
+          }
+          if (this.#joinType === "left" && !hasNonNullChild) return;
+          group.children[i]!.push(childRow);
+        });
+      }
+
+      // Build nested result
+      const result: JoinResult<Parent, Joined, ParentCols>[] = [];
+      for (const { parent, children } of grouped.values()) {
+        const decodedParent = this.#selectedColumns
+          ? decodeSelectedRow(parent, this.#parent, this.#selectedColumns)
+          : decodeRow(parent, this.#parent);
+
+        const nested: Record<string, unknown> = { ...decodedParent };
+        childEntryMaps.forEach((childMap, i) => {
+          nested[childMap.name] = children[i]!.map((c) => decodeRow(c, childMap.table));
+        });
+
+        result.push(nested as JoinResult<Parent, Joined, ParentCols>);
+      }
+
+      return result;
+    } catch (e) {
+      if (e instanceof QueryError) throw e;
+      throw new QueryError(`Failed to execute query: ${sql}`, e as Error);
     }
-
-    // Build nested result
-    const result: JoinResult<Parent, Joined, ParentCols>[] = [];
-    for (const { parent, children } of grouped.values()) {
-      const decodedParent = this.#selectedColumns
-        ? decodeSelectedRow(parent, this.#parent, this.#selectedColumns)
-        : decodeRow(parent, this.#parent);
-
-      const nested: Record<string, unknown> = { ...decodedParent };
-      childEntryMaps.forEach((childMap, i) => {
-        nested[childMap.name] = children[i]!.map((c) => decodeRow(c, childMap.table));
-      });
-
-      result.push(nested as JoinResult<Parent, Joined, ParentCols>);
-    }
-
-    return result;
   }
 }
 
@@ -782,65 +796,70 @@ export class SingleJoinBuilderImpl<
   /** Returns a single parent with nested children, or null. */
   execute(): JoinResult<Parent, Joined, ParentCols> | null {
     const { sql, params } = this.toSQL();
-    const allRows = this.#client.prepare(sql).all(...bind(params)) as Record<string, unknown>[];
-    if (allRows.length === 0) return null;
+    try {
+      const allRows = this.#client.prepare(sql).all(...bind(params)) as Record<string, unknown>[];
+      if (allRows.length === 0) return null;
 
-    // Group by parent PK (same logic as JoinBuilderImpl.execute)
-    const parentEntries = columnEntries(this.#parent as any);
-    const pkKey = findPKKey(this.#parent);
-    const pkColName = (this.#parent as any)[pkKey].name;
+      // Group by parent PK (same logic as JoinBuilderImpl.execute)
+      const parentEntries = columnEntries(this.#parent as any);
+      const pkKey = findPKKey(this.#parent);
+      const pkColName = (this.#parent as any)[pkKey].name;
 
-    const childEntryMaps: { name: string; entries: [string, ColumnDef<any, any>][]; table: TableDef<any> }[] = [];
-    for (const j of this.#joins) {
-      childEntryMaps.push({
-        name: j.name,
-        entries: columnEntries(j.table as any),
-        table: j.table,
-      });
-    }
-
-    const grouped = new Map<unknown, { parent: Record<string, unknown>; children: Record<string, unknown>[][] }>();
-
-    for (const r of allRows) {
-      const pk = r[pkColName];
-      if (!grouped.has(pk)) {
-        const parentRow: Record<string, unknown> = {};
-        for (const [key, col] of parentEntries) {
-          parentRow[key] = r[col.name];
-        }
-        grouped.set(pk, {
-          parent: parentRow,
-          children: childEntryMaps.map(() => []),
+      const childEntryMaps: { name: string; entries: [string, ColumnDef<any, any>][]; table: TableDef<any> }[] = [];
+      for (const j of this.#joins) {
+        childEntryMaps.push({
+          name: j.name,
+          entries: columnEntries(j.table as any),
+          table: j.table,
         });
       }
 
-      const group = grouped.get(pk)!;
-      childEntryMaps.forEach((childMap, i) => {
-        const childRow: Record<string, unknown> = {};
-        let hasNonNullChild = false;
-        for (const [key, col] of childMap.entries) {
-          const val = r[`${childMap.name}_${col.name}`];
-          childRow[key] = val;
-          if (val != null) hasNonNullChild = true;
+      const grouped = new Map<unknown, { parent: Record<string, unknown>; children: Record<string, unknown>[][] }>();
+
+      for (const r of allRows) {
+        const pk = r[pkColName];
+        if (!grouped.has(pk)) {
+          const parentRow: Record<string, unknown> = {};
+          for (const [key, col] of parentEntries) {
+            parentRow[key] = r[col.name];
+          }
+          grouped.set(pk, {
+            parent: parentRow,
+            children: childEntryMaps.map(() => []),
+          });
         }
-        if (this.#joinType === "left" && !hasNonNullChild) return;
-        group.children[i]!.push(childRow);
+
+        const group = grouped.get(pk)!;
+        childEntryMaps.forEach((childMap, i) => {
+          const childRow: Record<string, unknown> = {};
+          let hasNonNullChild = false;
+          for (const [key, col] of childMap.entries) {
+            const val = r[`${childMap.name}_${col.name}`];
+            childRow[key] = val;
+            if (val != null) hasNonNullChild = true;
+          }
+          if (this.#joinType === "left" && !hasNonNullChild) return;
+          group.children[i]!.push(childRow);
+        });
+      }
+
+      const first = grouped.values().next().value;
+      if (!first) return null;
+
+      const decodedParent = this.#selectedColumns
+        ? decodeSelectedRow(first.parent, this.#parent, this.#selectedColumns)
+        : decodeRow(first.parent, this.#parent);
+
+      const nested: Record<string, unknown> = { ...decodedParent };
+      childEntryMaps.forEach((childMap, i) => {
+        nested[childMap.name] = first.children[i]!.map((c) => decodeRow(c, childMap.table));
       });
+
+      return nested as JoinResult<Parent, Joined, ParentCols>;
+    } catch (e) {
+      if (e instanceof QueryError) throw e;
+      throw new QueryError(`Failed to execute query: ${sql}`, e as Error);
     }
-
-    const first = grouped.values().next().value;
-    if (!first) return null;
-
-    const decodedParent = this.#selectedColumns
-      ? decodeSelectedRow(first.parent, this.#parent, this.#selectedColumns)
-      : decodeRow(first.parent, this.#parent);
-
-    const nested: Record<string, unknown> = { ...decodedParent };
-    childEntryMaps.forEach((childMap, i) => {
-      nested[childMap.name] = first.children[i]!.map((c) => decodeRow(c, childMap.table));
-    });
-
-    return nested as JoinResult<Parent, Joined, ParentCols>;
   }
 }
 
@@ -866,7 +885,7 @@ export class InsertBuilder<T extends TableDef<any>> implements Executable {
   }
 
   toSQL(): { sql: string; params: unknown[] } {
-    if (!this.#row) throw new Error("Missing .values() call");
+    if (!this.#row) throw new ValidationError("Missing .values() call");
     const entries = columnEntries(this.#table as any);
 
     // Filter out columns with defaults when value is undefined
@@ -917,7 +936,11 @@ export class InsertBuilder<T extends TableDef<any>> implements Executable {
 
   execute(): void {
     const { sql, params } = this.toSQL();
-    this.#client.prepare(sql).run(...bind(params));
+    try {
+      this.#client.prepare(sql).run(...bind(params));
+    } catch (e) {
+      throw new QueryError(`Failed to execute query: ${sql}`, e as Error);
+    }
   }
 }
 
@@ -976,7 +999,7 @@ export class UpdateBuilder<T extends TableDef<any>> implements Executable {
         params.push(col.__internal.encode(new Date()));
       }
     }
-    if (setClauses.length === 0) throw new Error("Missing .set() call");
+    if (setClauses.length === 0) throw new ValidationError("Missing .set() call");
     let sql = `UPDATE ${this.#tableName} SET ${setClauses.join(", ")}`;
     const where = compileConditions(this.#conditions, params);
     if (where !== "1=1") sql += ` WHERE ${where}`;
@@ -985,7 +1008,11 @@ export class UpdateBuilder<T extends TableDef<any>> implements Executable {
 
   execute(): void {
     const { sql, params } = this.toSQL();
-    this.#client.prepare(sql).run(...bind(params));
+    try {
+      this.#client.prepare(sql).run(...bind(params));
+    } catch (e) {
+      throw new QueryError(`Failed to execute query: ${sql}`, e as Error);
+    }
   }
 }
 
@@ -1020,6 +1047,10 @@ export class DeleteBuilder<T extends TableDef<any>> implements Executable {
 
   execute(): void {
     const { sql, params } = this.toSQL();
-    this.#client.prepare(sql).run(...bind(params));
+    try {
+      this.#client.prepare(sql).run(...bind(params));
+    } catch (e) {
+      throw new QueryError(`Failed to execute query: ${sql}`, e as Error);
+    }
   }
 }

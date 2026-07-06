@@ -15,3 +15,6 @@ export type { InferRow, InsertRow, TableDef } from "./schema/table";
 // Conditions: eq, and, or (flint-orm/conditions)
 export { eq, and, or } from "./query/conditions";
 export type { Condition } from "./query/conditions";
+
+// Errors
+export { FlintError, ValidationError, QueryError } from "./errors";
