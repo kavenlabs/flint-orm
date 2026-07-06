@@ -1,106 +1,77 @@
+# CLAUDE.md
 
-Default to using Bun instead of Node.js.
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-- Use `bun <file>` instead of `node <file>` or `ts-node <file>`
-- Use `bun test` instead of `jest` or `vitest`
-- Use `bun build <file.html|file.ts|file.css>` instead of `webpack` or `esbuild`
-- Use `bun install` instead of `npm install` or `yarn install` or `pnpm install`
-- Use `bun run <script>` instead of `npm run <script>` or `yarn run <script>` or `pnpm run <script>`
-- Use `bunx <package> <command>` instead of `npx <package> <command>`
-- Bun automatically loads .env, so don't use dotenv.
+## Commands
 
-## APIs
+- **Typecheck**: `bun typecheck`
+- **Lint**: `bun lint` (oxlint)
+- **Format**: `bun format` (oxfmt)
+- **Run tests**: `bun test`
+- **Run a single test**: `bun test --test-name-pattern "test name"` or `bun test src/test.test.ts`
 
-- `Bun.serve()` supports WebSockets, HTTPS, and routes. Don't use `express`.
-- `bun:sqlite` for SQLite. Don't use `better-sqlite3`.
-- `Bun.redis` for Redis. Don't use `ioredis`.
-- `Bun.sql` for Postgres. Don't use `pg` or `postgres.js`.
-- `WebSocket` is built-in. Don't use `ws`.
-- Prefer `Bun.file` over `node:fs`'s readFile/writeFile
-- Bun.$`ls` instead of execa.
+## Architecture
 
-## Testing
+flint-orm is a type-safe SQLite ORM built for Bun. It uses functional composition (no classes, no `new`) with immutable, chainable builders. Backed by `bun:sqlite`.
 
-Use `bun test` to run tests.
+### Core Pattern: Two-Phase Builders
 
-```ts#index.test.ts
-import { test, expect } from "bun:test";
+All query operations use a two-phase builder pattern to enforce correct usage at the type level:
 
-test("hello world", () => {
-  expect(1).toBe(1);
-});
-```
+1. **Phase 1 (Stage1)**: Only one method available (e.g., `.from()`, `.values()`, `.set()`)
+2. **Phase 2 (Full Builder)**: All chainable methods available after Phase 1
 
-## Frontend
+This prevents calling `.execute()` before providing required data.
 
-Use HTML imports with `Bun.serve()`. Don't use `vite`. HTML imports fully support React, CSS, Tailwind.
+### Key Modules
 
-Server:
+- **`src/flint.ts`**: `flint()` factory function — creates the db object with all query methods. Also exports `sql` tagged template for raw SQL expressions.
+- **`src/schema/table.ts`**: `table()` function defines tables. Stores column definitions as direct properties with SQL metadata under `._`. Also exports `snakeCase` namespace for auto camelCase→snake_case column naming.
+- **`src/schema/columns.ts`**: Column constructors (`text()`, `integer()`, `boolean()`, `json()`, `date()`, `real()`). Each returns an immutable `ColumnDef` with chainable modifiers (`.primaryKey()`, `.notNull()`, etc.).
+- **`src/query/builder.ts`**: All query builders (SELECT, INSERT, UPDATE, DELETE, JOIN). Builders receive `client` at construction and implement `Executable` interface with `.toSQL()` and `.execute()`.
+- **`src/query/conditions.ts`**: Condition helpers (`eq`, `and`, `or`, `gt`, `like`, etc.) that compile to SQL WHERE clauses. `eq()` supports both value and column-to-column comparison.
+- **`src/query/aggregates.ts`**: Aggregate functions (`count`, `countColumn`, `sum`, `avg`, `min`, `max`).
 
-```ts#index.ts
-import index from "./index.html"
+### Column Storage Mapping
 
-Bun.serve({
-  routes: {
-    "/": index,
-    "/api/users/:id": {
-      GET: (req) => {
-        return new Response(JSON.stringify({ id: req.params.id }));
-      },
-    },
-  },
-  // optional websocket support
-  websocket: {
-    open: (ws) => {
-      ws.send("Hello, world!");
-    },
-    message: (ws, message) => {
-      ws.send(message);
-    },
-    close: (ws) => {
-      // handle close
-    }
-  },
-  development: {
-    hmr: true,
-    console: true,
-  }
-})
-```
+Columns encode/decode between TypeScript types and SQLite storage classes:
 
-HTML files can import .tsx, .jsx or .js files directly and Bun's bundler will transpile & bundle automatically. `<link>` tags can point to stylesheets and Bun's CSS bundler will bundle.
+- `text()` → TEXT (string, passthrough)
+- `integer()` → INTEGER (number, passthrough). Supports `.autoIncrement()`.
+- `boolean()` → INTEGER (stores 0/1, exposes boolean)
+- `json()` → TEXT (JSON.stringify/parse)
+- `date()` → INTEGER (unix timestamp ms, exposes Date). Supports `.defaultNow()` and `.onUpdate()`.
+- `real()` → REAL (number, passthrough)
 
-```html#index.html
-<html>
-  <body>
-    <h1>Hello, world!</h1>
-    <script type="module" src="./frontend.tsx"></script>
-  </body>
-</html>
-```
+### Data Flow
 
-With the following `frontend.tsx`:
+1. Values go through `column.__internal.encode()` when building SQL params
+2. Results go through `column.__internal.decode()` when reading from SQLite
+3. All encoding/decoding happens at a single chokepoint per direction
 
-```tsx#frontend.tsx
-import React from "react";
-import { createRoot } from "react-dom/client";
+### Table/Column Relationship
 
-// import .css files directly and it works
-import './index.css';
+- `table()` stamps `tableName` onto each column's `__internal`
+- Columns carry their SQL name, type, constraints, and encode/decode functions
+- `._` property on table objects stores the SQL table name
 
-const root = createRoot(document.body);
+### Join System
 
-export default function Frontend() {
-  return <h1>Hello, world!</h1>;
-}
+Joins support auto-discovery of foreign key conditions via `.references()` on column definitions. One-to-many joins produce nested arrays under the child table name.
 
-root.render(<Frontend />);
-```
+### Query Features
 
-Then, run index.ts
+- `.single()` — returns one row or null (adds LIMIT 1)
+- `.distinct()` — SELECT DISTINCT
+- `.columns()` — narrow selected columns (type-safe Pick)
+- `.returning()` — on INSERT/UPDATE/DELETE, return affected rows
+- `.onConflictDoNothing()` / `.onConflictDoUpdate()` — upsert support
+- `db.raw(sql, params)` — execute raw SQL directly
+- `db.batch(queries)` — run multiple queries in a transaction
 
-```sh
-bun --hot ./index.ts
-```
+## Conventions
 
-For more information, read the Bun API docs in `node_modules/bun-types/docs/**.mdx`.
+- **No classes in public API** — all functionality exposed via functions and plain objects
+- **Immutable builders** — every chain method returns a new instance
+- **Private fields** — use `#field` syntax (native private)
+- **Error hierarchy** — `FlintError` base → `FlintValidationError`, `FlintQueryError`
