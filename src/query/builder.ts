@@ -85,6 +85,52 @@ function resolveForeignKeyCondition(
   );
 }
 
+/**
+ * Extract all column references from a condition tree.
+ * Used for runtime validation of column ownership.
+ */
+function extractColumns(cond: Condition): ColumnDef<any, any>[] {
+  switch (cond.type) {
+    case "eq":
+      return [cond.column];
+    case "eqColumn":
+      return [cond.left, cond.right];
+    case "in":
+    case "notIn":
+    case "isNull":
+    case "isNotNull":
+      return [cond.column];
+    case "and":
+    case "or":
+      return cond.conditions.flatMap(extractColumns);
+  }
+}
+
+/**
+ * Validate that all columns in conditions belong to the allowed tables.
+ * Checks object identity — the column must be the exact same object from the table definition.
+ */
+function validateColumnOwnership(
+  conditions: Condition[],
+  allowedTables: TableDef<any>[],
+  context: string,
+): void {
+  const allowedColumns = new Set(
+    allowedTables.flatMap((t) => columnEntries(t as any).map(([, c]) => c)),
+  );
+  for (const cond of conditions) {
+    const cols = extractColumns(cond);
+    for (const col of cols) {
+      if (!allowedColumns.has(col)) {
+        throw new ValidationError(
+          `Column "${col.name}" does not belong to ${context}. ` +
+          `Check that you're using a column from the queried table, not a different table.`
+        );
+      }
+    }
+  }
+}
+
 /** Resolve column list SQL from selected columns or all entries. */
 function resolveColumns<T extends TableDef<any>>(
   table: T,
@@ -298,6 +344,7 @@ export class SelectBuilder<
   }
 
   toSQL(): { sql: string; params: unknown[] } {
+    validateColumnOwnership(this.#conditions, [this.#table], `SELECT from "${this.#tableName}"`);
     const cols = resolveColumns(this.#table, this.#selectedColumns as string[] | null);
     const params: unknown[] = [];
     let sql = `SELECT ${cols} FROM ${this.#tableName}`;
@@ -403,6 +450,7 @@ export class SingleSelectBuilder<
   }
 
   toSQL(): { sql: string; params: unknown[] } {
+    validateColumnOwnership(this.#conditions, [this.#table], `SELECT from "${this.#tableName}"`);
     const cols = resolveColumns(this.#table, this.#selectedColumns as string[] | null);
     const params: unknown[] = [];
     let sql = `SELECT ${cols} FROM ${this.#tableName}`;
@@ -698,6 +746,8 @@ export class JoinBuilderImpl<
   }
 
   toSQL(): { sql: string; params: unknown[] } {
+    const allowedTables = [this.#parent, ...this.#joins.map(j => j.table)];
+    validateColumnOwnership(this.#conditions, allowedTables, `SELECT from "${this.#parentName}"`);
     const parentCols = resolveColumns(
       this.#parent,
       this.#selectedColumns as string[] | null,
@@ -915,6 +965,8 @@ export class SingleJoinBuilderImpl<
   }
 
   toSQL(): { sql: string; params: unknown[] } {
+    const allowedTables = [this.#parent, ...this.#joins.map(j => j.table)];
+    validateColumnOwnership(this.#conditions, allowedTables, `SELECT from "${this.#parentName}"`);
     const parentCols = resolveColumns(
       this.#parent,
       this.#selectedColumns as string[] | null,
@@ -1219,9 +1271,9 @@ export class UpdateBuilder<T extends TableDef<any>, R extends boolean = false> i
   }
 
   toSQL(): { sql: string; params: unknown[] } {
+    validateColumnOwnership(this.#conditions, [this.#table], `UPDATE "${this.#tableName}"`);
     const params: unknown[] = [];
     const setClauses: string[] = [];
-    const setKeys = new Set(Object.keys(this.#set));
     for (const key of Object.keys(this.#set)) {
       const col: ColumnDef<any, any> = (this.#table as any)[key];
       // onUpdate always wins — ignore user value
@@ -1287,6 +1339,7 @@ export class DeleteBuilder<T extends TableDef<any>, R extends boolean = false> i
   }
 
   toSQL(): { sql: string; params: unknown[] } {
+    validateColumnOwnership(this.#conditions, [this.#table], `DELETE from "${this.#tableName}"`);
     const params: unknown[] = [];
     let sql = `DELETE FROM ${this.#tableName}`;
     const where = compileConditions(this.#conditions, params);

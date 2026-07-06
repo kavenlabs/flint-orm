@@ -5,9 +5,10 @@
 // -----------------------------------------------------------------------
 
 import { flint } from "./flint";
-import { eq, and } from "./query/conditions";
+import { eq, and, isNotNull } from "./query/conditions";
 import { text, boolean, json, integer, date } from "./schema/columns";
 import { table } from "./schema/table";
+import { ValidationError } from "./errors";
 import type { InferRow } from "./schema/table";
 import type { JoinResult } from "./query/builder";
 
@@ -374,6 +375,64 @@ db.update(posts).set({ title: "Hello v3", updatedAt: new Date(0) }).where(eq(pos
 const p1v3 = db.select().from(posts).where(eq(posts.id, "p1")).single().execute();
 console.log("After update with explicit date:", JSON.stringify(p1v3, null, 2));
 console.log("updatedAt is not epoch?", (p1v3?.updatedAt as Date)?.getTime() !== 0);
+
+// ── FEATURE 5: Column ownership validation ─────────────────────────────────
+
+console.log("\n── column ownership validation ──");
+
+// Valid: using a column from the queried table
+try {
+  db.select().from(users).where(eq(users.id, "u1")).toSQL();
+  console.log("✓ valid column usage passed");
+} catch (e) {
+  console.log("✗ should not have thrown:", (e as Error).message);
+}
+
+// Invalid: using a column from a different table
+try {
+  db.select().from(users).where(isNotNull(orders.id)).toSQL();
+  console.log("✗ should have thrown for cross-table column");
+} catch (e) {
+  if (e instanceof ValidationError) {
+    console.log("✓ caught cross-table column error:", (e as Error).message);
+  } else {
+    console.log("✗ unexpected error:", (e as Error).message);
+  }
+}
+
+// Invalid in UPDATE
+try {
+  db.update(users).set({ active: true }).where(eq(orders.id, "o1")).toSQL();
+  console.log("✗ should have thrown for cross-table column in UPDATE");
+} catch (e) {
+  if (e instanceof ValidationError) {
+    console.log("✓ caught cross-table column in UPDATE:", (e as Error).message);
+  } else {
+    console.log("✗ unexpected error:", (e as Error).message);
+  }
+}
+
+// Invalid in DELETE
+try {
+  db.delete(users).where(eq(orders.id, "o1")).toSQL();
+  console.log("✗ should have thrown for cross-table column in DELETE");
+} catch (e) {
+  if (e instanceof ValidationError) {
+    console.log("✓ caught cross-table column in DELETE:", (e as Error).message);
+  } else {
+    console.log("✗ unexpected error:", (e as Error).message);
+  }
+}
+
+// Valid in JOIN: using columns from both tables
+try {
+  db.leftJoin(orders).on(orderItems, eq(orders.id, orderItems.orderId)).where(eq(orders.id, "o1")).toSQL();
+  console.log("✓ valid column usage in JOIN passed");
+} catch (e) {
+  console.log("✗ should not have thrown:", (e as Error).message);
+}
+
+console.log();
 
 // ── Cleanup ────────────────────────────────────────────────────────────────
 

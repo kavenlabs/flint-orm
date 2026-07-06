@@ -10,6 +10,8 @@ export type Condition =
   | { type: "eqColumn"; left: ColumnDef<any, any>; right: ColumnDef<any, any> }
   | { type: "in"; column: ColumnDef<any, any>; values: unknown[] }
   | { type: "notIn"; column: ColumnDef<any, any>; values: unknown[] }
+  | { type: "isNull"; column: ColumnDef<any, any> }
+  | { type: "isNotNull"; column: ColumnDef<any, any> }
   | { type: "and"; conditions: Condition[] }
   | { type: "or"; conditions: Condition[] };
 
@@ -50,6 +52,16 @@ export function isNotIn<T>(column: ColumnDef<T, any>, values: T[]): Condition {
   return { type: "notIn", column, values };
 }
 
+/** Check if column value is NULL. */
+export function isNull(column: ColumnDef<any, any>): Condition {
+  return { type: "isNull", column };
+}
+
+/** Check if column value is NOT NULL. */
+export function isNotNull(column: ColumnDef<any, any>): Condition {
+  return { type: "isNotNull", column };
+}
+
 // -----------------------------------------------------------------------
 // Internal: compile a Condition tree to a SQL fragment + params array.
 // Encode is applied to every value at this single chokepoint.
@@ -84,6 +96,10 @@ export function compileCondition(
       const placeholders = encoded.map(() => "?").join(", ");
       return `${cond.column.name} NOT IN (${placeholders})`;
     }
+    case "isNull":
+      return `${cond.column.name} IS NULL`;
+    case "isNotNull":
+      return `${cond.column.name} IS NOT NULL`;
     case "and":
       return cond.conditions
         .map((c) => compileCondition(c, params))
