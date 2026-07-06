@@ -10,7 +10,7 @@ import type { ColumnDef } from "../schema/columns";
 import type { Condition } from "./conditions";
 import { compileConditions, eq } from "./conditions";
 import type { TableDef, InferRow, InsertRow } from "../schema/table";
-import { ValidationError, QueryError } from "../errors";
+import { FlintValidationError, FlintQueryError } from "../errors";
 
 // -----------------------------------------------------------------------
 // Shared helpers
@@ -54,7 +54,7 @@ function findPKKey(tbl: TableDef<any>): string {
   for (const [key, col] of columnEntries(tbl as any)) {
     if (col.__internal.isPrimaryKey) return key;
   }
-  throw new ValidationError("Table has no primary key column");
+  throw new FlintValidationError("Table has no primary key column");
 }
 
 /**
@@ -80,7 +80,7 @@ function resolveForeignKeyCondition(
       }
     }
   }
-  throw new ValidationError(
+  throw new FlintValidationError(
     `No foreign key reference found from "${childName}" to "${parentName}". Use .references() on the child table or provide an explicit condition.`
   );
 }
@@ -127,7 +127,7 @@ function validateColumnOwnership(
     const cols = extractColumns(cond);
     for (const col of cols) {
       if (!allowedColumns.has(col)) {
-        throw new ValidationError(
+        throw new FlintValidationError(
           `Column "${col.name}" does not belong to ${context}. ` +
           `Check that you're using a column from the queried table, not a different table.`
         );
@@ -402,7 +402,7 @@ export class SelectBuilder<
       }
       return rows.map((r) => decodeRow(r, this.#table));
     } catch (e) {
-      throw new QueryError(`Failed to execute query: ${sql}`, e as Error);
+      throw new FlintQueryError(`Failed to execute query: ${sql}`, e as Error);
     }
   }
 }
@@ -517,7 +517,7 @@ export class SingleSelectBuilder<
       }
       return decodeRow(row, this.#table) as Pick<InferRow<T>, C>;
     } catch (e) {
-      throw new QueryError(`Failed to execute query: ${sql}`, e as Error);
+      throw new FlintQueryError(`Failed to execute query: ${sql}`, e as Error);
     }
   }
 }
@@ -899,8 +899,8 @@ export class JoinBuilderImpl<
 
       return result;
     } catch (e) {
-      if (e instanceof QueryError) throw e;
-      throw new QueryError(`Failed to execute query: ${sql}`, e as Error);
+      if (e instanceof FlintQueryError) throw e;
+      throw new FlintQueryError(`Failed to execute query: ${sql}`, e as Error);
     }
   }
 }
@@ -1116,8 +1116,8 @@ export class SingleJoinBuilderImpl<
 
       return nested as JoinResult<Parent, Joined, ParentCols>;
     } catch (e) {
-      if (e instanceof QueryError) throw e;
-      throw new QueryError(`Failed to execute query: ${sql}`, e as Error);
+      if (e instanceof FlintQueryError) throw e;
+      throw new FlintQueryError(`Failed to execute query: ${sql}`, e as Error);
     }
   }
 }
@@ -1283,7 +1283,7 @@ export class InsertBuilder<T extends TableDef<any>, R extends boolean = false> i
       this.#client.prepare(sql).run(...bind(params));
       return undefined as any;
     } catch (e) {
-      throw new QueryError(`Failed to execute query: ${sql}`, e as Error);
+      throw new FlintQueryError(`Failed to execute query: ${sql}`, e as Error);
     }
   }
 }
@@ -1394,7 +1394,7 @@ export class UpdateBuilder<T extends TableDef<any>, R extends boolean = false> i
       this.#client.prepare(sql).run(...bind(params));
       return undefined as any;
     } catch (e) {
-      throw new QueryError(`Failed to execute query: ${sql}`, e as Error);
+      throw new FlintQueryError(`Failed to execute query: ${sql}`, e as Error);
     }
   }
 }
@@ -1450,7 +1450,7 @@ export class DeleteBuilder<T extends TableDef<any>, R extends boolean = false> i
       this.#client.prepare(sql).run(...bind(params));
       return undefined as any;
     } catch (e) {
-      throw new QueryError(`Failed to execute query: ${sql}`, e as Error);
+      throw new FlintQueryError(`Failed to execute query: ${sql}`, e as Error);
     }
   }
 }

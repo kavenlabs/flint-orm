@@ -8,7 +8,7 @@ import { flint } from "./flint";
 import { eq, and, isNotNull, like, glob, between, gt, gte, lt, lte, neq } from "./query/conditions";
 import { text, boolean, json, integer, date } from "./schema/columns";
 import { table } from "./schema/table";
-import { ValidationError } from "./errors";
+import { FlintValidationError } from "./errors";
 import type { InferRow } from "./schema/table";
 import type { JoinResult } from "./query/builder";
 
@@ -393,7 +393,7 @@ try {
   db.select().from(users).where(isNotNull(orders.id)).toSQL();
   console.log("✗ should have thrown for cross-table column");
 } catch (e) {
-  if (e instanceof ValidationError) {
+  if (e instanceof FlintValidationError) {
     console.log("✓ caught cross-table column error:", (e as Error).message);
   } else {
     console.log("✗ unexpected error:", (e as Error).message);
@@ -405,7 +405,7 @@ try {
   db.update(users).set({ active: true }).where(eq(orders.id, "o1")).toSQL();
   console.log("✗ should have thrown for cross-table column in UPDATE");
 } catch (e) {
-  if (e instanceof ValidationError) {
+  if (e instanceof FlintValidationError) {
     console.log("✓ caught cross-table column in UPDATE:", (e as Error).message);
   } else {
     console.log("✗ unexpected error:", (e as Error).message);
@@ -417,7 +417,7 @@ try {
   db.delete(users).where(eq(orders.id, "o1")).toSQL();
   console.log("✗ should have thrown for cross-table column in DELETE");
 } catch (e) {
-  if (e instanceof ValidationError) {
+  if (e instanceof FlintValidationError) {
     console.log("✓ caught cross-table column in DELETE:", (e as Error).message);
   } else {
     console.log("✗ unexpected error:", (e as Error).message);

@@ -11,19 +11,19 @@ export class FlintError extends Error {
 }
 
 /** Thrown when a value violates a column constraint (notNull, type mismatch). */
-export class ValidationError extends FlintError {
+export class FlintValidationError extends FlintError {
   constructor(message: string) {
     super(message);
-    this.name = "ValidationError";
+    this.name = "FlintValidationError";
   }
 }
 
 /** Thrown when a SQL query fails to execute. */
-export class QueryError extends FlintError {
+export class FlintQueryError extends FlintError {
   public readonly originalError?: Error;
   constructor(message: string, originalError?: Error) {
     super(message);
-    this.name = "QueryError";
+    this.name = "FlintQueryError";
     this.originalError = originalError;
   }
 }
