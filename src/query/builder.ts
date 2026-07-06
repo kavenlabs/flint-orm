@@ -225,6 +225,7 @@ export class SelectBuilder<
   #orderByClauses: { column: ColumnDef<any, any>; direction: "asc" | "desc" }[];
   #limitValue: number | null;
   #offsetValue: number | null;
+  #distinct: boolean;
 
   constructor(
     client: DatabaseClient,
@@ -235,6 +236,7 @@ export class SelectBuilder<
     orderByClauses: { column: ColumnDef<any, any>; direction: "asc" | "desc" }[] = [],
     limitValue: number | null = null,
     offsetValue: number | null = null,
+    distinct: boolean = false,
   ) {
     this.#client = client;
     this.#tableName = tableName;
@@ -244,6 +246,7 @@ export class SelectBuilder<
     this.#orderByClauses = orderByClauses;
     this.#limitValue = limitValue;
     this.#offsetValue = offsetValue;
+    this.#distinct = distinct;
   }
 
   where(condition: Condition): SelectBuilder<T, C> {
@@ -256,6 +259,7 @@ export class SelectBuilder<
       this.#orderByClauses,
       this.#limitValue,
       this.#offsetValue,
+      this.#distinct,
     );
   }
 
@@ -273,6 +277,7 @@ export class SelectBuilder<
       this.#orderByClauses,
       this.#limitValue,
       this.#offsetValue,
+      this.#distinct,
     );
   }
 
@@ -289,6 +294,24 @@ export class SelectBuilder<
       this.#selectedColumns,
       this.#orderByClauses,
       this.#offsetValue,
+      this.#distinct,
+    );
+  }
+
+  /**
+   * Return only distinct (unique) rows.
+   */
+  distinct(): SelectBuilder<T, C> {
+    return new SelectBuilder(
+      this.#client,
+      this.#tableName,
+      this.#table,
+      this.#conditions,
+      this.#selectedColumns,
+      this.#orderByClauses,
+      this.#limitValue,
+      this.#offsetValue,
+      true,
     );
   }
 
@@ -311,6 +334,7 @@ export class SelectBuilder<
       [...this.#orderByClauses, { column, direction }],
       this.#limitValue,
       this.#offsetValue,
+      this.#distinct,
     );
   }
 
@@ -328,6 +352,7 @@ export class SelectBuilder<
       this.#orderByClauses,
       n,
       this.#offsetValue,
+      this.#distinct,
     );
   }
 
@@ -345,6 +370,7 @@ export class SelectBuilder<
       this.#orderByClauses,
       this.#limitValue,
       n,
+      this.#distinct,
     );
   }
 
@@ -352,7 +378,8 @@ export class SelectBuilder<
     validateColumnOwnership(this.#conditions, [this.#table], `SELECT from "${this.#tableName}"`);
     const cols = resolveColumns(this.#table, this.#selectedColumns as string[] | null);
     const params: unknown[] = [];
-    let sql = `SELECT ${cols} FROM ${this.#tableName}`;
+    const distinct = this.#distinct ? "DISTINCT " : "";
+    let sql = `SELECT ${distinct}${cols} FROM ${this.#tableName}`;
     const where = compileConditions(this.#conditions, params);
     if (where !== "1=1") sql += ` WHERE ${where}`;
     if (this.#orderByClauses.length > 0) {
@@ -395,6 +422,7 @@ export class SingleSelectBuilder<
   #selectedColumns: C[] | null;
   #orderByClauses: { column: ColumnDef<any, any>; direction: "asc" | "desc" }[];
   #offsetValue: number | null;
+  #distinct: boolean;
 
   constructor(
     client: DatabaseClient,
@@ -404,6 +432,7 @@ export class SingleSelectBuilder<
     selectedColumns: C[] | null = null,
     orderByClauses: { column: ColumnDef<any, any>; direction: "asc" | "desc" }[] = [],
     offsetValue: number | null = null,
+    distinct: boolean = false,
   ) {
     this.#client = client;
     this.#tableName = tableName;
@@ -412,6 +441,7 @@ export class SingleSelectBuilder<
     this.#selectedColumns = selectedColumns;
     this.#orderByClauses = orderByClauses;
     this.#offsetValue = offsetValue;
+    this.#distinct = distinct;
   }
 
   where(condition: Condition): SingleSelectBuilder<T, C> {
@@ -423,6 +453,7 @@ export class SingleSelectBuilder<
       this.#selectedColumns,
       this.#orderByClauses,
       this.#offsetValue,
+      this.#distinct,
     );
   }
 
@@ -439,6 +470,7 @@ export class SingleSelectBuilder<
       this.#selectedColumns,
       [...this.#orderByClauses, { column, direction }],
       this.#offsetValue,
+      this.#distinct,
     );
   }
 
@@ -451,6 +483,7 @@ export class SingleSelectBuilder<
       this.#selectedColumns,
       this.#orderByClauses,
       n,
+      this.#distinct,
     );
   }
 
@@ -458,7 +491,8 @@ export class SingleSelectBuilder<
     validateColumnOwnership(this.#conditions, [this.#table], `SELECT from "${this.#tableName}"`);
     const cols = resolveColumns(this.#table, this.#selectedColumns as string[] | null);
     const params: unknown[] = [];
-    let sql = `SELECT ${cols} FROM ${this.#tableName}`;
+    const distinct = this.#distinct ? "DISTINCT " : "";
+    let sql = `SELECT ${distinct}${cols} FROM ${this.#tableName}`;
     const where = compileConditions(this.#conditions, params);
     if (where !== "1=1") sql += ` WHERE ${where}`;
     if (this.#orderByClauses.length > 0) {

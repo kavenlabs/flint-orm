@@ -509,6 +509,38 @@ console.log("between SQL:", db.select().from(orders).where(between(orders.total,
 
 console.log();
 
+// ── FEATURE 8: distinct ────────────────────────────────────────────────────
+
+console.log("── distinct ──");
+
+// Insert duplicate userId values
+db.insert(orders).values({ id: "o4", userId: "u2", total: 50 }).execute();
+db.insert(orders).values({ id: "o5", userId: "u2", total: 75 }).execute();
+
+// Without distinct - should return all userIds
+const allUserIds = db
+  .select()
+  .from(orders)
+  .columns(["userId"])
+  .execute();
+console.log("All userIds:", allUserIds.map((r) => r.userId));
+// Should have: u2, u2, u2, u2, u2 (5 entries)
+
+// With distinct - should return unique userIds
+const uniqueUserIds = db
+  .select()
+  .from(orders)
+  .columns(["userId"])
+  .distinct()
+  .execute();
+console.log("Distinct userIds:", uniqueUserIds.map((r) => r.userId));
+// Should have: u2 (1 entry)
+
+// toSQL example
+console.log("distinct SQL:", db.select().from(orders).columns(["userId"]).distinct().toSQL());
+
+console.log();
+
 // ── Cleanup ────────────────────────────────────────────────────────────────
 
 db.$client.close();
