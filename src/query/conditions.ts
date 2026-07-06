@@ -8,6 +8,8 @@ import type { ColumnDef } from "../schema/columns";
 export type Condition =
   | { type: "eq"; column: ColumnDef<any, any>; value: unknown }
   | { type: "eqColumn"; left: ColumnDef<any, any>; right: ColumnDef<any, any> }
+  | { type: "in"; column: ColumnDef<any, any>; values: unknown[] }
+  | { type: "notIn"; column: ColumnDef<any, any>; values: unknown[] }
   | { type: "and"; conditions: Condition[] }
   | { type: "or"; conditions: Condition[] };
 
@@ -38,6 +40,16 @@ export function or(...conditions: Condition[]): Condition {
   return { type: "or", conditions };
 }
 
+/** Check if column value is in the given array. */
+export function isIn<T>(column: ColumnDef<T, any>, values: T[]): Condition {
+  return { type: "in", column, values };
+}
+
+/** Check if column value is not in the given array. */
+export function isNotIn<T>(column: ColumnDef<T, any>, values: T[]): Condition {
+  return { type: "notIn", column, values };
+}
+
 // -----------------------------------------------------------------------
 // Internal: compile a Condition tree to a SQL fragment + params array.
 // Encode is applied to every value at this single chokepoint.
@@ -59,6 +71,18 @@ export function compileCondition(
         ? `${cond.right.__internal.tableName}.${cond.right.name}`
         : cond.right.name;
       return `${leftName} = ${rightName}`;
+    }
+    case "in": {
+      const encoded = cond.values.map((v) => cond.column.__internal.encode(v));
+      params.push(...encoded);
+      const placeholders = encoded.map(() => "?").join(", ");
+      return `${cond.column.name} IN (${placeholders})`;
+    }
+    case "notIn": {
+      const encoded = cond.values.map((v) => cond.column.__internal.encode(v));
+      params.push(...encoded);
+      const placeholders = encoded.map(() => "?").join(", ");
+      return `${cond.column.name} NOT IN (${placeholders})`;
     }
     case "and":
       return cond.conditions
