@@ -6,7 +6,7 @@
 
 import { flint } from "./flint";
 import { eq, and } from "./query/conditions";
-import { text, boolean, json, integer } from "./schema/columns";
+import { text, boolean, json, integer, date } from "./schema/columns";
 import { table } from "./schema/table";
 import type { InferRow } from "./schema/table";
 import type { JoinResult } from "./query/builder";
@@ -337,6 +337,43 @@ console.log(
 console.log("update:", db.update(users).set({ active: true }).where(eq(users.id, "u3")).toSQL());
 
 console.log("delete:", db.delete(users).where(eq(users.id, "u3")).toSQL());
+
+// ── FEATURE 4: date column — defaultNow + onUpdate ────────────────────────
+
+console.log("\n── date column: defaultNow + onUpdate ──");
+
+const posts = table("posts", {
+  id: text("id").primaryKey(),
+  title: text("title").notNull(),
+  createdAt: date().defaultNow(),
+  updatedAt: date().onUpdate(),
+});
+
+db.$client.run(`CREATE TABLE IF NOT EXISTS posts (
+  id TEXT PRIMARY KEY,
+  title TEXT NOT NULL,
+  createdAt INTEGER,
+  updatedAt INTEGER
+)`);
+
+// Insert without dates — defaultNow should kick in
+db.insert(posts).values({ id: "p1", title: "Hello" }).execute();
+const p1 = db.select().from(posts).where(eq(posts.id, "p1")).single().execute();
+console.log("Insert with defaultNow:", JSON.stringify(p1, null, 2));
+console.log("createdAt is Date?", p1?.createdAt instanceof Date);
+console.log("updatedAt is null?", p1?.updatedAt === null);
+
+// Update — updatedAt should auto-fill
+db.update(posts).set({ title: "Hello Updated" }).where(eq(posts.id, "p1")).execute();
+const p1After = db.select().from(posts).where(eq(posts.id, "p1")).single().execute();
+console.log("After update:", JSON.stringify(p1After, null, 2));
+console.log("updatedAt is Date?", p1After?.updatedAt instanceof Date);
+
+// Update with explicit updatedAt — should be ignored (onUpdate always wins)
+db.update(posts).set({ title: "Hello v3", updatedAt: new Date(0) }).where(eq(posts.id, "p1")).execute();
+const p1v3 = db.select().from(posts).where(eq(posts.id, "p1")).single().execute();
+console.log("After update with explicit date:", JSON.stringify(p1v3, null, 2));
+console.log("updatedAt is not epoch?", (p1v3?.updatedAt as Date)?.getTime() !== 0);
 
 // ── Cleanup ────────────────────────────────────────────────────────────────
 

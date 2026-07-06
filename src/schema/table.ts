@@ -4,7 +4,7 @@
 // Table metadata (SQL name) is stored under `._`.
 // -----------------------------------------------------------------------
 
-import type { ColumnDef } from "./columns";
+import type { ColumnDef, IntegerColumnDef, DateColumnDef, DateColumnDefWithDefault } from "./columns";
 /**
  * A table definition. `T` is the column map — every key is a column name
  * whose value is a ColumnDef. The hidden `._` property carries SQL metadata.
@@ -28,9 +28,11 @@ export function table<T extends Record<string, ColumnDef<any, any>>>(
   // Stamp table name onto each column
   const stamped = Object.create(null);
   for (const [key, col] of Object.entries(columns)) {
-    const stampedInternal = { ...col.__internal, tableName: name };
+    // If column has no name (empty string), use the object key as the SQL name
+    const columnName = col.name || key;
+    const stampedInternal = { ...col.__internal, name: columnName, tableName: name };
     const stampedCol: ColumnDef<any, any> = {
-      name: col.name,
+      name: columnName,
       __internal: stampedInternal,
       primaryKey() {
         return { ...this, __internal: { ...stampedInternal, isPrimaryKey: true } };
@@ -56,7 +58,18 @@ export function table<T extends Record<string, ColumnDef<any, any>>>(
       };
     }
 
-    stamped[key] = stampedCol;
+    // Preserve defaultNow/onUpdate if the original column had them (date columns)
+    if ("defaultNow" in col) {
+      (stampedCol as any).defaultNow = function () {
+        return { ...this, __internal: { ...stampedInternal, hasDefaultNow: true } };
+      };
+    }
+    if ("onUpdate" in col) {
+      (stampedCol as any).onUpdate = function () {
+        return { ...this, __internal: { ...stampedInternal, hasOnUpdate: true } };
+      };
+    }
+
     stamped[key] = stampedCol;
   }
   return Object.assign(stamped, {
@@ -66,11 +79,34 @@ export function table<T extends Record<string, ColumnDef<any, any>>>(
 
 /**
  * Derive the row shape from a table's column definitions.
- * Each column's phantom `_type` (inside `__internal`) becomes the property type.
- * Skips `_` metadata and any non-ColumnDef properties.
+ * DateColumnDef → Date | null (nullable unless defaultNow() was called)
+ * DateColumnDefWithDefault → Date (non-nullable, has a guaranteed default)
+ * All other columns → their _type as-is.
  */
 export type InferRow<T extends TableDef<any>> = {
-  [K in keyof Omit<T, "_">]: T[K] extends ColumnDef<any, any>
+  [K in keyof Omit<T, "_">]: T[K] extends DateColumnDefWithDefault
+    ? Date
+    : T[K] extends DateColumnDef
+      ? Date | null
+      : T[K] extends ColumnDef<any, any>
+        ? T[K]["__internal"]["_type"]
+        : never;
+};
+
+/** Check if a column has an auto-generated default (DateColumnDef or IntegerColumnDef). */
+type HasAutoDefault<C> = C extends DateColumnDef
+  ? true
+  : C extends IntegerColumnDef<any>
+    ? true
+    : false;
+
+/** Row type for INSERT — DateColumnDef and IntegerColumnDef columns are optional. */
+export type InsertRow<T extends TableDef<any>> = {
+  [K in keyof Omit<T, "_"> as HasAutoDefault<T[K]> extends true ? never : K]: T[K] extends ColumnDef<any, any>
+    ? T[K]["__internal"]["_type"]
+    : never;
+} & {
+  [K in keyof Omit<T, "_"> as HasAutoDefault<T[K]> extends true ? K : never]?: T[K] extends ColumnDef<any, any>
     ? T[K]["__internal"]["_type"]
     : never;
 };
@@ -123,6 +159,16 @@ export function snakeCaseTable<T extends Record<string, ColumnDef<any, any>>>(
     if ("autoIncrement" in col) {
       (stampedCol as any).autoIncrement = function () {
         return { ...this, __internal: { ...stampedInternal, isAutoIncrement: true } };
+      };
+    }
+    if ("defaultNow" in col) {
+      (stampedCol as any).defaultNow = function () {
+        return { ...this, __internal: { ...stampedInternal, hasDefaultNow: true } };
+      };
+    }
+    if ("onUpdate" in col) {
+      (stampedCol as any).onUpdate = function () {
+        return { ...this, __internal: { ...stampedInternal, hasOnUpdate: true } };
       };
     }
 

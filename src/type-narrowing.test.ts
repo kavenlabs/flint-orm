@@ -5,7 +5,8 @@
 
 import { flint } from "./flint";
 import { eq } from "./query/conditions";
-import { text, boolean, json, integer } from "./schema/columns";
+import { text, boolean, json, integer, date } from "./schema/columns";
+import type { DateColumnDef } from "./schema/columns";
 import { table } from "./schema/table";
 import type { InferRow } from "./schema/table";
 import type { JoinResult } from "./query/builder";
@@ -101,5 +102,20 @@ const _t7: _Test7 = true;
 // Uncomment to verify — should fail to compile:
 // db.select().from(users).columns(["nonexistent"]).execute();
 // db.select().from(users).columns(["nonexistent"]).execute();
+
+// ── 9. date column — defaultNow and onUpdate are available ────────────────
+
+const tsDate = date().defaultNow().onUpdate();
+type _Test8a = typeof tsDate extends DateColumnDef ? true : false;
+const _t8a: _Test8a = true;
+
+// defaultNow() chains back to DateColumnDef
+const tsDate2 = date().notNull().defaultNow();
+type _Test8b = typeof tsDate2 extends DateColumnDef ? true : false;
+const _t8b: _Test8b = true;
+
+// date().default() accepts Date, not string
+// Uncomment to verify — should fail to compile:
+// date().default("2024-01-01");
 
 console.log("All type narrowing checks passed at compile time ✓");

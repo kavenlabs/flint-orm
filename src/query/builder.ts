@@ -9,7 +9,7 @@ import type { SQLQueryBindings } from "bun:sqlite";
 import type { ColumnDef } from "../schema/columns";
 import type { Condition } from "./conditions";
 import { compileConditions } from "./conditions";
-import type { TableDef, InferRow } from "../schema/table";
+import type { TableDef, InferRow, InsertRow } from "../schema/table";
 
 // -----------------------------------------------------------------------
 // Shared helpers
@@ -852,16 +852,16 @@ export class InsertBuilder<T extends TableDef<any>> implements Executable {
   #client: DatabaseClient;
   #tableName: string;
   #table: T;
-  #row: InferRow<T> | undefined;
+  #row: InsertRow<T> | undefined;
 
-  constructor(client: DatabaseClient, tableName: string, table: T, row?: InferRow<T>) {
+  constructor(client: DatabaseClient, tableName: string, table: T, row?: InsertRow<T>) {
     this.#client = client;
     this.#tableName = tableName;
     this.#table = table;
     this.#row = row;
   }
 
-  values(row: InferRow<T>): InsertBuilder<T> {
+  values(row: InsertRow<T>): InsertBuilder<T> {
     return new InsertBuilder(this.#client, this.#tableName, this.#table, row);
   }
 
@@ -881,12 +881,17 @@ export class InsertBuilder<T extends TableDef<any>> implements Executable {
         // Skip — let SQLite handle autoincrement
         continue;
       }
+      if (value === undefined && c.__internal.hasDefaultNow) {
+        // Use current time as default
+        inserts.push([key, c]);
+        continue;
+      }
       inserts.push([key, c]);
     }
 
     if (inserts.length === 0) {
       // All columns have defaults — insert with defaults only
-      const allDefault = entries.filter(([, c]) => c.__internal.hasDefault || c.__internal.isAutoIncrement);
+      const allDefault = entries.filter(([, c]) => c.__internal.hasDefault || c.__internal.isAutoIncrement || c.__internal.hasDefaultNow);
       const names = allDefault.map(([, c]) => c.name).join(", ");
       const placeholders = allDefault.map(() => "DEFAULT").join(", ");
       return {
@@ -897,9 +902,13 @@ export class InsertBuilder<T extends TableDef<any>> implements Executable {
 
     const names = inserts.map(([, c]) => c.name).join(", ");
     const placeholders = inserts.map(() => "?").join(", ");
-    const params = inserts.map(([key, c]) =>
-      c.__internal.encode((this.#row as any)[key]),
-    );
+    const params = inserts.map(([key, c]) => {
+      const value = (this.#row as any)[key];
+      if (value === undefined && c.__internal.hasDefaultNow) {
+        return c.__internal.encode(new Date());
+      }
+      return c.__internal.encode(value);
+    });
     return {
       sql: `INSERT INTO ${this.#tableName} (${names}) VALUES (${placeholders})`,
       params,
@@ -948,10 +957,24 @@ export class UpdateBuilder<T extends TableDef<any>> implements Executable {
   toSQL(): { sql: string; params: unknown[] } {
     const params: unknown[] = [];
     const setClauses: string[] = [];
+    const setKeys = new Set(Object.keys(this.#set));
     for (const key of Object.keys(this.#set)) {
       const col: ColumnDef<any, any> = (this.#table as any)[key];
+      // onUpdate always wins — ignore user value
+      if (col.__internal.hasOnUpdate) {
+        setClauses.push(`${col.name} = ?`);
+        params.push(col.__internal.encode(new Date()));
+        continue;
+      }
       setClauses.push(`${col.name} = ?`);
       params.push(col.__internal.encode((this.#set as any)[key]));
+    }
+    // Add onUpdate columns that weren't in the user's .set()
+    for (const [key, col] of columnEntries(this.#table as any)) {
+      if (col.__internal.hasOnUpdate && !setKeys.has(key)) {
+        setClauses.push(`${col.name} = ?`);
+        params.push(col.__internal.encode(new Date()));
+      }
     }
     if (setClauses.length === 0) throw new Error("Missing .set() call");
     let sql = `UPDATE ${this.#tableName} SET ${setClauses.join(", ")}`;

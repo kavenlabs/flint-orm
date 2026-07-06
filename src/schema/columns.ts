@@ -32,6 +32,8 @@ export interface ColumnDef<T, S extends string = string> {
     readonly defaultValue: T | undefined;
     readonly defaultFn: (() => T) | undefined;
     readonly isAutoIncrement: boolean;
+    readonly hasDefaultNow: boolean;
+    readonly hasOnUpdate: boolean;
     /** Converts logical value → storage value. Called by the builder. */
     readonly encode: (value: T) => unknown;
     /** Converts storage value → logical value. Called by the builder. */
@@ -50,6 +52,30 @@ export interface IntegerColumnDef<S extends string = "integer"> extends ColumnDe
   defaultFn(fn: () => number): IntegerColumnDef<S>;
   /** Mark as auto-increment (SQLite ROWID alias). Only available on integer columns. */
   autoIncrement(): IntegerColumnDef<S>;
+}
+
+/** Date column — nullable in results unless defaultNow() is called. */
+export interface DateColumnDef extends ColumnDef<Date, "integer"> {
+  primaryKey(): DateColumnDef;
+  notNull(): DateColumnDef;
+  unique(): DateColumnDef;
+  default(value: Date): DateColumnDef;
+  defaultFn(fn: () => Date): DateColumnDef;
+  /** Use current Date.now() when value is undefined during INSERT. */
+  defaultNow(): DateColumnDefWithDefault;
+  /** Always set to current Date.now() on UPDATE, regardless of user value. */
+  onUpdate(): DateColumnDef;
+}
+
+/** Date column with a guaranteed default — non-nullable in results. */
+export interface DateColumnDefWithDefault extends DateColumnDef {
+  primaryKey(): DateColumnDefWithDefault;
+  notNull(): DateColumnDefWithDefault;
+  unique(): DateColumnDefWithDefault;
+  default(value: Date): DateColumnDefWithDefault;
+  defaultFn(fn: () => Date): DateColumnDefWithDefault;
+  defaultNow(): DateColumnDefWithDefault;
+  onUpdate(): DateColumnDefWithDefault;
 }
 
 // -----------------------------------------------------------------------
@@ -74,6 +100,8 @@ function makeColumn<T, S extends string>(config: {
       defaultValue: undefined as T | undefined,
       defaultFn: undefined as (() => T) | undefined,
       isAutoIncrement: false,
+      hasDefaultNow: false,
+      hasOnUpdate: false,
       encode: config.encode,
       decode: config.decode,
       tableName: null as string | null,
@@ -167,6 +195,43 @@ export function json<T>(name?: string): ColumnDef<T, "text"> {
     decode: (v) =>
       v == null ? (null as unknown as T) : (JSON.parse(v as string) as T),
   });
+}
+
+/** Stores unix timestamp in milliseconds (integer) in SQLite, exposes Date in TS. */
+export function date(name?: string): DateColumnDef {
+  const base = makeColumn<Date, "integer">({
+    name: name ?? "",
+    sqlType: "integer",
+    encode: (v) => (v == null ? null : v.getTime()),
+    decode: (v) => (v == null ? (null as unknown as Date) : new Date(v as number)),
+  });
+
+  const dateCol: DateColumnDef = {
+    ...base,
+    primaryKey() {
+      return { ...this, __internal: { ...this.__internal, isPrimaryKey: true } };
+    },
+    notNull() {
+      return { ...this, __internal: { ...this.__internal, isNotNull: true } };
+    },
+    unique() {
+      return { ...this, __internal: { ...this.__internal, isUnique: true } };
+    },
+    default(value: Date) {
+      return { ...this, __internal: { ...this.__internal, hasDefault: true, defaultValue: value } };
+    },
+    defaultFn(fn: () => Date) {
+      return { ...this, __internal: { ...this.__internal, hasDefault: true, defaultFn: fn } };
+    },
+    defaultNow() {
+      return { ...this, __internal: { ...this.__internal, hasDefaultNow: true } };
+    },
+    onUpdate() {
+      return { ...this, __internal: { ...this.__internal, hasOnUpdate: true } };
+    },
+  };
+
+  return dateCol;
 }
 
 export function real(name?: string): ColumnDef<number, "real"> {
