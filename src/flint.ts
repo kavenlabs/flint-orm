@@ -3,7 +3,7 @@
 // No classes, no `new`. Just a function call.
 // -----------------------------------------------------------------------
 
-import { Database } from "bun:sqlite";
+import { Database, type SQLQueryBindings } from "bun:sqlite";
 import {
   SelectFromBuilder,
   InsertValuesBuilder,
@@ -13,7 +13,7 @@ import {
 } from "./query/builder";
 import type { Executable, SelectStage1, InsertStage1, UpdateStage1, JoinSelectStage1 } from "./query/builder";
 import { count, countColumn, sum, avg, min, max } from "./query/aggregates";
-import type { TableDef } from "./schema/table";
+import type { AnyTable } from "./schema/table";
 import type { Condition } from "./query/conditions";
 import type { ColumnDef } from "./schema/columns";
 
@@ -46,32 +46,32 @@ export function flint(details: ConnectionDetails) {
     select: (): SelectStage1 => new SelectFromBuilder(client),
 
     /** Start an INSERT — call .values(row) next. */
-    insert: <T extends TableDef<any>>(table: T): InsertStage1<T> =>
-      new InsertValuesBuilder<T>(client, (table as any)._.name, table),
+    insert: <T extends AnyTable>(table: T): InsertStage1<T> =>
+      new InsertValuesBuilder<T>(client, table._.name, table),
 
     /** Start an UPDATE — call .set(partial) next. */
-    update: <T extends TableDef<any>>(table: T): UpdateStage1<T> =>
-      new UpdateSetBuilder<T>(client, (table as any)._.name, table),
+    update: <T extends AnyTable>(table: T): UpdateStage1<T> =>
+      new UpdateSetBuilder<T>(client, table._.name, table),
 
     /** Start a DELETE — call .where(condition) next. */
-    delete: <T extends TableDef<any>>(table: T) =>
-      new DeleteBuilder<T>(client, (table as any)._.name, table),
+    delete: <T extends AnyTable>(table: T) =>
+      new DeleteBuilder<T>(client, table._.name, table),
 
     /**
      * LEFT JOIN — call .on(condition) next.
      * Returns rows from the left table, with matching right table data
      * (or null values if no match). One-to-many produces nested arrays.
      */
-    leftJoin: <Parent extends TableDef<any>>(parent: Parent): JoinSelectStage1<Parent> =>
-      new JoinStage1(client, parent, (parent as any)._.name, "left"),
+    leftJoin: <Parent extends AnyTable>(parent: Parent): JoinSelectStage1<Parent> =>
+      new JoinStage1(client, parent, parent._.name, "left"),
 
     /**
      * INNER JOIN — call .on(condition) next.
      * Returns only rows where both tables have matching data.
      * One-to-many produces nested arrays.
      */
-    innerJoin: <Parent extends TableDef<any>>(parent: Parent): JoinSelectStage1<Parent> =>
-      new JoinStage1(client, parent, (parent as any)._.name, "inner"),
+    innerJoin: <Parent extends AnyTable>(parent: Parent): JoinSelectStage1<Parent> =>
+      new JoinStage1(client, parent, parent._.name, "inner"),
 
     /**
      * Run multiple queries atomically in a single transaction.
@@ -84,34 +84,34 @@ export function flint(details: ConnectionDetails) {
       const stmts = queries.map((q) => q.toSQL());
       const tx = client.transaction(() => {
         for (const { sql, params } of stmts) {
-          client.prepare(sql).run(...(params as any));
+          client.prepare(sql).run(...(params as SQLQueryBindings[]));
         }
       });
       tx();
     },
 
     /** count(*) — count all rows in the table. */
-    count: <T extends TableDef<any>>(table: T, condition?: Condition) =>
+    count: <T extends AnyTable>(table: T, condition?: Condition) =>
       count(client, table, condition),
 
     /** count(column) — count non-null values of a column. */
-    countColumn: <T extends TableDef<any>, C extends ColumnDef<any, any>>(table: T, column: C, condition?: Condition) =>
+    countColumn: <T extends AnyTable, C extends ColumnDef<any, any>>(table: T, column: C, condition?: Condition) =>
       countColumn(client, table, column, condition),
 
     /** sum(column) — sum of non-null values. */
-    sum: <T extends TableDef<any>, C extends ColumnDef<any, any>>(table: T, column: C, condition?: Condition) =>
+    sum: <T extends AnyTable, C extends ColumnDef<any, any>>(table: T, column: C, condition?: Condition) =>
       sum(client, table, column, condition),
 
     /** avg(column) — average of non-null values. */
-    avg: <T extends TableDef<any>, C extends ColumnDef<any, any>>(table: T, column: C, condition?: Condition) =>
+    avg: <T extends AnyTable, C extends ColumnDef<any, any>>(table: T, column: C, condition?: Condition) =>
       avg(client, table, column, condition),
 
     /** min(column) — minimum non-null value. */
-    min: <T extends TableDef<any>, C extends ColumnDef<any, any>>(table: T, column: C, condition?: Condition) =>
+    min: <T extends AnyTable, C extends ColumnDef<any, any>>(table: T, column: C, condition?: Condition) =>
       min(client, table, column, condition),
 
     /** max(column) — maximum non-null value. */
-    max: <T extends TableDef<any>, C extends ColumnDef<any, any>>(table: T, column: C, condition?: Condition) =>
+    max: <T extends AnyTable, C extends ColumnDef<any, any>>(table: T, column: C, condition?: Condition) =>
       max(client, table, column, condition),
 
     /**
@@ -123,7 +123,7 @@ export function flint(details: ConnectionDetails) {
      * db.raw("SELECT count(*) as cnt FROM users")
      */
     raw: <T = Record<string, unknown>>(sql: string, params?: unknown[]): T[] => {
-      return client.prepare(sql).all(...(params ?? []) as any) as T[];
+      return client.prepare(sql).all(...((params ?? []) as SQLQueryBindings[])) as T[];
     },
 
     /** Direct access to the underlying client (escape hatch). */

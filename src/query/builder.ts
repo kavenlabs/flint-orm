@@ -9,7 +9,7 @@ import type { SQLQueryBindings } from "bun:sqlite";
 import type { ColumnDef } from "../schema/columns";
 import type { Condition } from "./conditions";
 import { compileConditions, eq } from "./conditions";
-import type { TableDef, InferRow, InsertRow } from "../schema/table";
+import type { TableDef, AnyTable, InferRow, InsertRow } from "../schema/table";
 import { FlintValidationError, FlintQueryError } from "../errors";
 
 // -----------------------------------------------------------------------
@@ -21,37 +21,46 @@ function bind(params: unknown[]): SQLQueryBindings[] {
   return params as SQLQueryBindings[];
 }
 
+/** Get a column by key from a table definition. */
+function getCol(tbl: AnyTable, key: string): ColumnDef<any, any> {
+  const col = (tbl as Record<string, ColumnDef<any, any>>)[key];
+  if (!col) throw new FlintValidationError(`Column "${key}" not found in table`);
+  return col;
+}
+
 /** Get column entries from a table (filters out the `._` metadata prop). */
-function columnEntries(tbl: Record<string, any>): [string, ColumnDef<any, any>][] {
+function columnEntries(tbl: AnyTable): [string, ColumnDef<any, any>][] {
   return Object.entries(tbl).filter(([k]) => k !== "_") as [string, ColumnDef<any, any>][];
 }
 
 /** Decode a raw SQLite row into the full logical TS shape. */
-function decodeRow<T extends TableDef<any>>(raw: Record<string, unknown>, tbl: T): InferRow<T> {
+function decodeRow<T extends AnyTable>(raw: Record<string, unknown>, tbl: T): InferRow<T> {
   const out: Record<string, unknown> = {};
-  for (const [key, col] of columnEntries(tbl as any)) {
+  for (const [key, col] of columnEntries(tbl)) {
     out[key] = col.__internal.decode(raw[col.name]);
   }
+  // SAFETY: built from the table's own column entries — keys and decode functions match InferRow<T>
   return out as InferRow<T>;
 }
 
 /** Decode a raw row for only the specified columns (column selection). */
-function decodeSelectedRow<T extends TableDef<any>, C extends keyof InferRow<T>>(
+function decodeSelectedRow<T extends AnyTable, C extends keyof InferRow<T>>(
   raw: Record<string, unknown>,
   tbl: T,
   keys: C[],
 ): Pick<InferRow<T>, C> {
   const out: Record<string, unknown> = {};
   for (const key of keys) {
-    const col: ColumnDef<any, any> = (tbl as any)[key];
+    const col = getCol(tbl, key as string);
     out[key as string] = col.__internal.decode(raw[col.name]);
   }
+  // SAFETY: built from the table's own columns, filtered to the requested keys
   return out as Pick<InferRow<T>, C>;
 }
 
 /** Find the primary key TS key of a table. */
-function findPKKey(tbl: TableDef<any>): string {
-  for (const [key, col] of columnEntries(tbl as any)) {
+function findPKKey(tbl: AnyTable): string {
+  for (const [key, col] of columnEntries(tbl)) {
     if (col.__internal.isPrimaryKey) return key;
   }
   throw new FlintValidationError("Table has no primary key column");
@@ -63,18 +72,18 @@ function findPKKey(tbl: TableDef<any>): string {
  * Returns the first matching condition.
  */
 function resolveForeignKeyCondition(
-  parent: TableDef<any>,
+  parent: AnyTable,
   parentName: string,
-  child: TableDef<any>,
+  child: AnyTable,
   childName: string,
 ): Condition {
-  for (const [, col] of columnEntries(child as any)) {
+  for (const [, col] of columnEntries(child)) {
     if (
       col.__internal.referencesTable === parentName &&
       col.__internal.referencesColumn
     ) {
       // Find the parent column that matches the referenced column name
-      const parentCol = (parent as any)[col.__internal.referencesColumn] as ColumnDef<any, any>;
+      const parentCol = getCol(parent, col.__internal.referencesColumn);
       if (parentCol) {
         return eq(parentCol, col);
       }
@@ -117,11 +126,11 @@ function extractColumns(cond: Condition): ColumnDef<any, any>[] {
  */
 function validateColumnOwnership(
   conditions: Condition[],
-  allowedTables: TableDef<any>[],
+  allowedTables: AnyTable[],
   context: string,
 ): void {
   const allowedColumns = new Set(
-    allowedTables.flatMap((t) => columnEntries(t as any).map(([, c]) => c)),
+    allowedTables.flatMap((t) => columnEntries(t).map(([, c]) => c)),
   );
   for (const cond of conditions) {
     const cols = extractColumns(cond);
@@ -137,7 +146,7 @@ function validateColumnOwnership(
 }
 
 /** Resolve column list SQL from selected columns or all entries. */
-function resolveColumns<T extends TableDef<any>>(
+function resolveColumns<T extends AnyTable>(
   table: T,
   selectedColumns: string[] | null,
   prefix?: string,
@@ -145,12 +154,12 @@ function resolveColumns<T extends TableDef<any>>(
   if (selectedColumns) {
     return selectedColumns
       .map((k) => {
-        const name = (table as any)[k].name;
+        const name = getCol(table, k).name;
         return prefix ? `${prefix}.${name}` : name;
       })
       .join(", ");
   }
-  const entries = columnEntries(table as any);
+  const entries = columnEntries(table);
   return entries.map(([, c]) => (prefix ? `${prefix}.${c.name}` : c.name)).join(", ");
 }
 
@@ -187,7 +196,7 @@ type JoinType = "left" | "inner";
 
 /** Phase 1: only .from() is available. */
 export interface SelectStage1 {
-  from<U extends TableDef<any>>(table: U): SelectBuilder<U>;
+  from<U extends AnyTable>(table: U): SelectBuilder<U>;
 }
 
 /** Lightweight wrapper that only exposes .from(). */
@@ -200,9 +209,8 @@ export class SelectFromBuilder implements SelectStage1 {
     this.#conditions = conditions;
   }
 
-  from<U extends TableDef<any>>(table: U): SelectBuilder<U> {
-    const name = (table as any)._.name as string;
-    return new SelectBuilder(this.#client, name, table, this.#conditions);
+  from<U extends AnyTable>(table: U): SelectBuilder<U> {
+    return new SelectBuilder(this.#client, table._.name, table, this.#conditions);
   }
 }
 
@@ -214,7 +222,7 @@ export class SelectFromBuilder implements SelectStage1 {
  * - After .columns(): the narrowed Pick type
  */
 export class SelectBuilder<
-  T extends TableDef<any>,
+  T extends AnyTable,
   C extends keyof InferRow<T> = keyof InferRow<T>,
 > implements Executable {
   #client: DatabaseClient;
@@ -273,7 +281,7 @@ export class SelectBuilder<
       this.#tableName,
       this.#table,
       this.#conditions,
-      keys as any,
+      keys as K[],
       this.#orderByClauses,
       this.#limitValue,
       this.#offsetValue,
@@ -324,7 +332,7 @@ export class SelectBuilder<
     key: K,
     direction: "asc" | "desc" = "asc",
   ): SelectBuilder<T, C> {
-    const column = (this.#table as any)[key] as ColumnDef<any, any>;
+    const column = getCol(this.#table, key as string);
     return new SelectBuilder(
       this.#client,
       this.#tableName,
@@ -376,7 +384,7 @@ export class SelectBuilder<
 
   toSQL(): { sql: string; params: unknown[] } {
     validateColumnOwnership(this.#conditions, [this.#table], `SELECT from "${this.#tableName}"`);
-    const cols = resolveColumns(this.#table, this.#selectedColumns as string[] | null);
+    const cols = resolveColumns(this.#table, this.#selectedColumns as unknown as string[] | null);
     const params: unknown[] = [];
     const distinct = this.#distinct ? "DISTINCT " : "";
     let sql = `SELECT ${distinct}${cols} FROM ${this.#tableName}`;
@@ -412,7 +420,7 @@ export class SelectBuilder<
 // -----------------------------------------------------------------------
 
 export class SingleSelectBuilder<
-  T extends TableDef<any>,
+  T extends AnyTable,
   C extends keyof InferRow<T> = keyof InferRow<T>,
 > implements Executable {
   #client: DatabaseClient;
@@ -461,7 +469,7 @@ export class SingleSelectBuilder<
     key: K,
     direction: "asc" | "desc" = "asc",
   ): SingleSelectBuilder<T, C> {
-    const column = (this.#table as any)[key] as ColumnDef<any, any>;
+    const column = getCol(this.#table, key as string);
     return new SingleSelectBuilder(
       this.#client,
       this.#tableName,
@@ -489,7 +497,7 @@ export class SingleSelectBuilder<
 
   toSQL(): { sql: string; params: unknown[] } {
     validateColumnOwnership(this.#conditions, [this.#table], `SELECT from "${this.#tableName}"`);
-    const cols = resolveColumns(this.#table, this.#selectedColumns as string[] | null);
+    const cols = resolveColumns(this.#table, this.#selectedColumns as unknown as string[] | null);
     const params: unknown[] = [];
     const distinct = this.#distinct ? "DISTINCT " : "";
     let sql = `SELECT ${distinct}${cols} FROM ${this.#tableName}`;
@@ -515,6 +523,7 @@ export class SingleSelectBuilder<
       if (this.#selectedColumns) {
         return decodeSelectedRow(row, this.#table, this.#selectedColumns);
       }
+      // SAFETY: decodeRow builds from the table's own column entries
       return decodeRow(row, this.#table) as Pick<InferRow<T>, C>;
     } catch (e) {
       throw new FlintQueryError(`Failed to execute query: ${sql}`, e as Error);
@@ -528,7 +537,7 @@ export class SingleSelectBuilder<
 
 /** Description of a single JOIN clause. */
 interface JoinClause {
-  table: TableDef<any>;
+  table: AnyTable;
   name: string;
   condition: Condition;
 }
@@ -538,10 +547,10 @@ interface JoinClause {
  * .on() takes both the child table AND the join condition in one call.
  * Chain multiple .on() calls for multiple joins.
  */
-export interface JoinSelectStage1<Parent extends TableDef<any>> {
-  on<Child extends TableDef<any>>(child: Child, condition: Condition): JoinBuilder<Parent, [Child]>;
+export interface JoinSelectStage1<Parent extends AnyTable> {
+  on<Child extends AnyTable>(child: Child, condition: Condition): JoinBuilder<Parent, [Child]>;
   /** Auto-join: infer condition from foreign key references on the child table. */
-  on<Child extends TableDef<any>>(child: Child): JoinBuilder<Parent, [Child]>;
+  on<Child extends AnyTable>(child: Child): JoinBuilder<Parent, [Child]>;
 }
 
 /**
@@ -549,16 +558,16 @@ export interface JoinSelectStage1<Parent extends TableDef<any>> {
  * .on(child, condition) adds another join.
  */
 export interface JoinBuilder<
-  Parent extends TableDef<any>,
-  Joined extends TableDef<any>[],
+  Parent extends AnyTable,
+  Joined extends AnyTable[],
   ParentCols extends keyof InferRow<Parent> = keyof InferRow<Parent>,
 > {
-  on<NewChild extends TableDef<any>>(
+  on<NewChild extends AnyTable>(
     child: NewChild,
     condition: Condition,
   ): JoinBuilder<Parent, [...Joined, NewChild], ParentCols>;
   /** Auto-join: infer condition from foreign key references on the child table. */
-  on<NewChild extends TableDef<any>>(
+  on<NewChild extends AnyTable>(
     child: NewChild,
   ): JoinBuilder<Parent, [...Joined, NewChild], ParentCols>;
   columns<K extends keyof InferRow<Parent>>(keys: K[]): JoinBuilder<Parent, Joined, K>;
@@ -576,8 +585,8 @@ export interface JoinBuilder<
 
 /** Single-row join builder — after .single() on a JoinBuilder. */
 export interface SingleJoinBuilder<
-  Parent extends TableDef<any>,
-  Joined extends TableDef<any>[],
+  Parent extends AnyTable,
+  Joined extends AnyTable[],
   ParentCols extends keyof InferRow<Parent> = keyof InferRow<Parent>,
 > {
   where(condition: Condition): SingleJoinBuilder<Parent, Joined, ParentCols>;
@@ -594,7 +603,7 @@ export interface SingleJoinBuilder<
  * Implementation of JoinSelectStage1 — only .on(child, condition) is available.
  * This is what db.leftJoin() returns.
  */
-export class JoinStage1<Parent extends TableDef<any>> implements JoinSelectStage1<Parent> {
+export class JoinStage1<Parent extends AnyTable> implements JoinSelectStage1<Parent> {
   #client: DatabaseClient;
   #parent: Parent;
   #parentName: string;
@@ -611,11 +620,11 @@ export class JoinStage1<Parent extends TableDef<any>> implements JoinSelectStage
    * Add a join. Takes both the child table AND the join condition.
    * Returns a builder that allows chaining more .on() calls.
    */
-  on<Child extends TableDef<any>>(
+  on<Child extends AnyTable>(
     child: Child,
     condition?: Condition,
   ): JoinBuilder<Parent, [Child]> {
-    const childName = (child as any)._.name as string;
+    const childName = child._.name;
     const resolvedCondition = condition ?? resolveForeignKeyCondition(this.#parent, this.#parentName, child, childName);
     return new JoinBuilderImpl(
       this.#client,
@@ -634,8 +643,8 @@ export class JoinStage1<Parent extends TableDef<any>> implements JoinSelectStage
  * with each joined table's data under its table name as key.
  */
 export class JoinBuilderImpl<
-  Parent extends TableDef<any>,
-  Joined extends TableDef<any>[],
+  Parent extends AnyTable,
+  Joined extends AnyTable[],
   ParentCols extends keyof InferRow<Parent> = keyof InferRow<Parent>,
 > implements JoinBuilder<Parent, Joined, ParentCols> {
   #client: DatabaseClient;
@@ -677,12 +686,13 @@ export class JoinBuilderImpl<
    * Add another join. Takes both the child table AND the join condition.
    * Returns a new builder with the accumulated joins.
    */
-  on<NewChild extends TableDef<any>>(
+  on<NewChild extends AnyTable>(
     child: NewChild,
     condition?: Condition,
   ): JoinBuilder<Parent, [...Joined, NewChild], ParentCols> {
-    const childName = (child as any)._.name as string;
+    const childName = child._.name;
     const resolvedCondition = condition ?? resolveForeignKeyCondition(this.#parent, this.#parentName, child, childName);
+    // SAFETY: constructor args match the interface — TypeScript can't infer the spread tuple type
     return new JoinBuilderImpl(
       this.#client,
       this.#parent,
@@ -691,10 +701,11 @@ export class JoinBuilderImpl<
       this.#joinType,
       this.#conditions,
       this.#selectedColumns,
-    ) as any;
+    ) as JoinBuilder<Parent, [...Joined, NewChild], ParentCols>;
   }
 
   where(condition: Condition): JoinBuilder<Parent, Joined, ParentCols> {
+    // SAFETY: constructor args match the interface
     return new JoinBuilderImpl(
       this.#client,
       this.#parent,
@@ -703,10 +714,11 @@ export class JoinBuilderImpl<
       this.#joinType,
       [...this.#conditions, condition],
       this.#selectedColumns,
-    ) as any;
+    ) as JoinBuilder<Parent, Joined, ParentCols>;
   }
 
   columns<K extends keyof InferRow<Parent>>(keys: K[]): JoinBuilder<Parent, Joined, K> {
+    // SAFETY: constructor args match the interface — K extends keyof InferRow<Parent> so keys are valid
     return new JoinBuilderImpl(
       this.#client,
       this.#parent,
@@ -714,18 +726,19 @@ export class JoinBuilderImpl<
       this.#joins,
       this.#joinType,
       this.#conditions,
-      keys as any,
+      keys as unknown as ParentCols[],
       this.#orderByClauses,
       this.#limitValue,
       this.#offsetValue,
-    ) as any;
+    ) as JoinBuilder<Parent, Joined, K>;
   }
 
   orderBy<K extends keyof InferRow<Parent>>(
     key: K,
     direction: "asc" | "desc" = "asc",
   ): JoinBuilder<Parent, Joined, ParentCols> {
-    const column = (this.#parent as any)[key] as ColumnDef<any, any>;
+    const column = getCol(this.#parent, key as string);
+    // SAFETY: constructor args match the interface
     return new JoinBuilderImpl(
       this.#client,
       this.#parent,
@@ -737,10 +750,11 @@ export class JoinBuilderImpl<
       [...this.#orderByClauses, { column, direction }],
       this.#limitValue,
       this.#offsetValue,
-    ) as any;
+    ) as JoinBuilder<Parent, Joined, ParentCols>;
   }
 
   limit(n: number): JoinBuilder<Parent, Joined, ParentCols> {
+    // SAFETY: constructor args match the interface
     return new JoinBuilderImpl(
       this.#client,
       this.#parent,
@@ -752,10 +766,11 @@ export class JoinBuilderImpl<
       this.#orderByClauses,
       n,
       this.#offsetValue,
-    ) as any;
+    ) as JoinBuilder<Parent, Joined, ParentCols>;
   }
 
   offset(n: number): JoinBuilder<Parent, Joined, ParentCols> {
+    // SAFETY: constructor args match the interface
     return new JoinBuilderImpl(
       this.#client,
       this.#parent,
@@ -767,10 +782,11 @@ export class JoinBuilderImpl<
       this.#orderByClauses,
       this.#limitValue,
       n,
-    ) as any;
+    ) as JoinBuilder<Parent, Joined, ParentCols>;
   }
 
   single(): SingleJoinBuilder<Parent, Joined, ParentCols> {
+    // SAFETY: constructor args match the interface
     return new SingleJoinBuilderImpl(
       this.#client,
       this.#parent,
@@ -781,7 +797,7 @@ export class JoinBuilderImpl<
       this.#selectedColumns,
       this.#orderByClauses,
       this.#offsetValue,
-    ) as any;
+    ) as SingleJoinBuilder<Parent, Joined, ParentCols>;
   }
 
   toSQL(): { sql: string; params: unknown[] } {
@@ -789,13 +805,13 @@ export class JoinBuilderImpl<
     validateColumnOwnership(this.#conditions, allowedTables, `SELECT from "${this.#parentName}"`);
     const parentCols = resolveColumns(
       this.#parent,
-      this.#selectedColumns as string[] | null,
+      this.#selectedColumns as unknown as string[] | null,
       this.#parentName,
     );
 
     const childCols: string[] = [];
     for (const join of this.#joins) {
-      const entries = columnEntries(join.table as any);
+      const entries = columnEntries(join.table);
       for (const [, c] of entries) {
         childCols.push(`${join.name}.${c.name} AS ${join.name}_${c.name}`);
       }
@@ -832,20 +848,20 @@ export class JoinBuilderImpl<
       const rows = this.#client.prepare(sql).all(...bind(params)) as Record<string, unknown>[];
 
       // Group flat rows by parent PK
-      const parentEntries = columnEntries(this.#parent as any);
+      const parentEntries = columnEntries(this.#parent);
       const pkKey = findPKKey(this.#parent);
-      const pkColName = (this.#parent as any)[pkKey].name;
+      const pkColName = getCol(this.#parent, pkKey).name;
 
       // Build child entry maps for each join
       const childEntryMaps: {
         name: string;
         entries: [string, ColumnDef<any, any>][];
-        table: TableDef<any>;
+        table: AnyTable;
       }[] = [];
       for (const j of this.#joins) {
         childEntryMaps.push({
           name: j.name,
-          entries: columnEntries(j.table as any),
+          entries: columnEntries(j.table),
           table: j.table,
         });
       }
@@ -911,8 +927,8 @@ export class JoinBuilderImpl<
  * Each joined table's data is nested under its table name as an array.
  */
 export type JoinResult<
-  Parent extends TableDef<any>,
-  Joined extends TableDef<any>[],
+  Parent extends AnyTable,
+  Joined extends AnyTable[],
   ParentCols extends keyof InferRow<Parent> = keyof InferRow<Parent>,
 > = Pick<InferRow<Parent>, ParentCols> & Record<string, unknown>;
 
@@ -921,8 +937,8 @@ export type JoinResult<
 // -----------------------------------------------------------------------
 
 export class SingleJoinBuilderImpl<
-  Parent extends TableDef<any>,
-  Joined extends TableDef<any>[],
+  Parent extends AnyTable,
+  Joined extends AnyTable[],
   ParentCols extends keyof InferRow<Parent> = keyof InferRow<Parent>,
 > implements Executable {
   #client: DatabaseClient;
@@ -975,7 +991,7 @@ export class SingleJoinBuilderImpl<
     key: K,
     direction: "asc" | "desc" = "asc",
   ): SingleJoinBuilderImpl<Parent, Joined, ParentCols> {
-    const column = (this.#parent as any)[key] as ColumnDef<any, any>;
+    const column = getCol(this.#parent, key as string);
     return new SingleJoinBuilderImpl(
       this.#client,
       this.#parent,
@@ -1008,13 +1024,13 @@ export class SingleJoinBuilderImpl<
     validateColumnOwnership(this.#conditions, allowedTables, `SELECT from "${this.#parentName}"`);
     const parentCols = resolveColumns(
       this.#parent,
-      this.#selectedColumns as string[] | null,
+      this.#selectedColumns as unknown as string[] | null,
       this.#parentName,
     );
 
     const childCols: string[] = [];
     for (const join of this.#joins) {
-      const entries = columnEntries(join.table as any);
+      const entries = columnEntries(join.table);
       for (const [, c] of entries) {
         childCols.push(`${join.name}.${c.name} AS ${join.name}_${c.name}`);
       }
@@ -1053,19 +1069,19 @@ export class SingleJoinBuilderImpl<
       if (allRows.length === 0) return null;
 
       // Group by parent PK (same logic as JoinBuilderImpl.execute)
-      const parentEntries = columnEntries(this.#parent as any);
+      const parentEntries = columnEntries(this.#parent);
       const pkKey = findPKKey(this.#parent);
-      const pkColName = (this.#parent as any)[pkKey].name;
+      const pkColName = getCol(this.#parent, pkKey).name;
 
       const childEntryMaps: {
         name: string;
         entries: [string, ColumnDef<any, any>][];
-        table: TableDef<any>;
+        table: AnyTable;
       }[] = [];
       for (const j of this.#joins) {
         childEntryMaps.push({
           name: j.name,
-          entries: columnEntries(j.table as any),
+          entries: columnEntries(j.table),
           table: j.table,
         });
       }
@@ -1127,12 +1143,12 @@ export class SingleJoinBuilderImpl<
 // -----------------------------------------------------------------------
 
 /** First phase: only .values() is available. Prevents .toSQL()/.execute() before supplying a row. */
-export interface InsertStage1<T extends TableDef<any>> {
+export interface InsertStage1<T extends AnyTable> {
   values(row: InsertRow<T>): InsertBuilder<T>;
 }
 
 /** Lightweight wrapper that only exposes .values(). */
-export class InsertValuesBuilder<T extends TableDef<any>> implements InsertStage1<T> {
+export class InsertValuesBuilder<T extends AnyTable> implements InsertStage1<T> {
   #client: DatabaseClient;
   #tableName: string;
   #table: T;
@@ -1150,15 +1166,15 @@ export class InsertValuesBuilder<T extends TableDef<any>> implements InsertStage
 
 /** ON CONFLICT strategy type. */
 type OnConflictDoNothing = { mode: "nothing" };
-type OnConflictDoUpdate<T extends TableDef<any>> = {
+type OnConflictDoUpdate<T extends AnyTable> = {
   mode: "update";
   target: ColumnDef<any, any> | ColumnDef<any, any>[];
   set: Partial<InferRow<T>>;
 };
-type OnConflictStrategy<T extends TableDef<any>> = OnConflictDoNothing | OnConflictDoUpdate<T>;
+type OnConflictStrategy<T extends AnyTable> = OnConflictDoNothing | OnConflictDoUpdate<T>;
 
 /** Full INSERT builder — available after .values() has been called. */
-export class InsertBuilder<T extends TableDef<any>, R extends boolean = false> implements Executable {
+export class InsertBuilder<T extends AnyTable, R extends boolean = false> implements Executable {
   #client: DatabaseClient;
   #tableName: string;
   #table: T;
@@ -1197,12 +1213,12 @@ export class InsertBuilder<T extends TableDef<any>, R extends boolean = false> i
   }
 
   toSQL(): { sql: string; params: unknown[] } {
-    const entries = columnEntries(this.#table as any);
+    const entries = columnEntries(this.#table);
 
     // Filter out columns with defaults when value is undefined
     const inserts: [string, ColumnDef<any, any>][] = [];
     for (const [key, c] of entries) {
-      const value = (this.#row as any)[key];
+      const value = (this.#row as Record<string, unknown>)[key];
       if (value === undefined && c.__internal.hasDefault) {
         // Skip — let SQLite handle the default
         continue;
@@ -1236,7 +1252,7 @@ export class InsertBuilder<T extends TableDef<any>, R extends boolean = false> i
     const names = inserts.map(([, c]) => c.name).join(", ");
     const placeholders = inserts.map(() => "?").join(", ");
     const params = inserts.map(([key, c]) => {
-      const value = (this.#row as any)[key];
+      const value = (this.#row as Record<string, unknown>)[key];
       if (value === undefined && c.__internal.hasDefaultNow) {
         return c.__internal.encode(new Date());
       }
@@ -1257,7 +1273,7 @@ export class InsertBuilder<T extends TableDef<any>, R extends boolean = false> i
         // Build SET clause using excluded.* for proposed values
         const setEntries = Object.entries(this.#onConflict.set);
         const setClauses = setEntries.map(([key, value]) => {
-          const col = (this.#table as any)[key] as ColumnDef<any, any>;
+          const col = getCol(this.#table, key);
           if (value === undefined) return null;
           // Use excluded.column for the proposed value
           return `${col.name} = excluded.${col.name}`;
@@ -1278,10 +1294,12 @@ export class InsertBuilder<T extends TableDef<any>, R extends boolean = false> i
     try {
       if (this.#returning) {
         const rows = this.#client.prepare(sql).all(...bind(params)) as Record<string, unknown>[];
-        return rows.map((r) => decodeRow(r, this.#table)) as any;
+        // SAFETY: decodeRow builds from the table's own column entries
+        return rows.map((r) => decodeRow(r, this.#table)) as R extends true ? InferRow<T>[] : never;
       }
       this.#client.prepare(sql).run(...bind(params));
-      return undefined as any;
+      // SAFETY: R is false here — TS can't narrow conditional return types at runtime
+      return undefined as R extends true ? never : void;
     } catch (e) {
       throw new FlintQueryError(`Failed to execute query: ${sql}`, e as Error);
     }
@@ -1293,12 +1311,12 @@ export class InsertBuilder<T extends TableDef<any>, R extends boolean = false> i
 // -----------------------------------------------------------------------
 
 /** First phase: only .set() is available. Prevents .toSQL()/.execute() before supplying values. */
-export interface UpdateStage1<T extends TableDef<any>> {
+export interface UpdateStage1<T extends AnyTable> {
   set(partial: Partial<InferRow<T>>): UpdateBuilder<T>;
 }
 
 /** Lightweight wrapper that only exposes .set(). */
-export class UpdateSetBuilder<T extends TableDef<any>> implements UpdateStage1<T> {
+export class UpdateSetBuilder<T extends AnyTable> implements UpdateStage1<T> {
   #client: DatabaseClient;
   #tableName: string;
   #table: T;
@@ -1315,7 +1333,7 @@ export class UpdateSetBuilder<T extends TableDef<any>> implements UpdateStage1<T
 }
 
 /** Full UPDATE builder — available after .set() has been called. */
-export class UpdateBuilder<T extends TableDef<any>, R extends boolean = false> implements Executable {
+export class UpdateBuilder<T extends AnyTable, R extends boolean = false> implements Executable {
   #client: DatabaseClient;
   #tableName: string;
   #table: T;
@@ -1367,7 +1385,7 @@ export class UpdateBuilder<T extends TableDef<any>, R extends boolean = false> i
     const params: unknown[] = [];
     const setClauses: string[] = [];
     for (const key of Object.keys(this.#set)) {
-      const col: ColumnDef<any, any> = (this.#table as any)[key];
+      const col = getCol(this.#table, key);
       // onUpdate always wins — ignore user value
       if (col.__internal.hasOnUpdate) {
         setClauses.push(`${col.name} = ?`);
@@ -1375,7 +1393,7 @@ export class UpdateBuilder<T extends TableDef<any>, R extends boolean = false> i
         continue;
       }
       setClauses.push(`${col.name} = ?`);
-      params.push(col.__internal.encode((this.#set as any)[key]));
+      params.push(col.__internal.encode((this.#set as Record<string, unknown>)[key]));
     }
     let sql = `UPDATE ${this.#tableName} SET ${setClauses.join(", ")}`;
     const where = compileConditions(this.#conditions, params);
@@ -1389,10 +1407,12 @@ export class UpdateBuilder<T extends TableDef<any>, R extends boolean = false> i
     try {
       if (this.#returning) {
         const rows = this.#client.prepare(sql).all(...bind(params)) as Record<string, unknown>[];
-        return rows.map((r) => decodeRow(r, this.#table)) as any;
+        // SAFETY: decodeRow builds from the table's own column entries
+        return rows.map((r) => decodeRow(r, this.#table)) as R extends true ? InferRow<T>[] : never;
       }
       this.#client.prepare(sql).run(...bind(params));
-      return undefined as any;
+      // SAFETY: R is false here — TS can't narrow conditional return types at runtime
+      return undefined as R extends true ? never : void;
     } catch (e) {
       throw new FlintQueryError(`Failed to execute query: ${sql}`, e as Error);
     }
@@ -1403,7 +1423,7 @@ export class UpdateBuilder<T extends TableDef<any>, R extends boolean = false> i
 // DELETE
 // -----------------------------------------------------------------------
 
-export class DeleteBuilder<T extends TableDef<any>, R extends boolean = false> implements Executable {
+export class DeleteBuilder<T extends AnyTable, R extends boolean = false> implements Executable {
   #client: DatabaseClient;
   #tableName: string;
   #table: T;
@@ -1445,10 +1465,12 @@ export class DeleteBuilder<T extends TableDef<any>, R extends boolean = false> i
     try {
       if (this.#returning) {
         const rows = this.#client.prepare(sql).all(...bind(params)) as Record<string, unknown>[];
-        return rows.map((r) => decodeRow(r, this.#table)) as any;
+        // SAFETY: decodeRow builds from the table's own column entries
+        return rows.map((r) => decodeRow(r, this.#table)) as R extends true ? InferRow<T>[] : never;
       }
       this.#client.prepare(sql).run(...bind(params));
-      return undefined as any;
+      // SAFETY: R is false here — TS can't narrow conditional return types at runtime
+      return undefined as R extends true ? never : void;
     } catch (e) {
       throw new FlintQueryError(`Failed to execute query: ${sql}`, e as Error);
     }

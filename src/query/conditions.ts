@@ -23,6 +23,11 @@ export type Condition =
   | { type: "and"; conditions: Condition[] }
   | { type: "or"; conditions: Condition[] };
 
+/** Type guard — check if a value is a ColumnDef. */
+function isColumnDef(value: unknown): value is ColumnDef<any, any> {
+  return value !== null && typeof value === "object" && "__internal" in (value as Record<string, unknown>);
+}
+
 /**
  * Equality check — value type is inferred from the column's phantom _type.
  * Also supports column-to-column comparison when the second argument is a ColumnDef.
@@ -30,12 +35,8 @@ export type Condition =
 export function eq<T>(column: ColumnDef<T, any>, value: T): Condition;
 export function eq<T>(left: ColumnDef<T, any>, right: ColumnDef<T, any>): Condition;
 export function eq(left: ColumnDef<any, any>, valueOrColumn: unknown): Condition {
-  if (
-    valueOrColumn !== null &&
-    typeof valueOrColumn === "object" &&
-    "__internal" in (valueOrColumn as any)
-  ) {
-    return { type: "eqColumn", left, right: valueOrColumn as ColumnDef<any, any> };
+  if (isColumnDef(valueOrColumn)) {
+    return { type: "eqColumn", left, right: valueOrColumn };
   }
   return { type: "eq", column: left, value: valueOrColumn };
 }

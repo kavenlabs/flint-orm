@@ -2,9 +2,9 @@
 // Aggregate functions — count, countColumn, sum, avg, min, max
 // -----------------------------------------------------------------------
 
-import type { Database } from "bun:sqlite";
+import type { Database, SQLQueryBindings } from "bun:sqlite";
 import type { ColumnDef } from "../schema/columns";
-import type { TableDef } from "../schema/table";
+import type { AnyTable } from "../schema/table";
 import type { Condition } from "./conditions";
 import { compileCondition } from "./conditions";
 
@@ -12,9 +12,9 @@ import { compileCondition } from "./conditions";
 // Helpers
 // -----------------------------------------------------------------------
 
-/** Extract the table name from a TableDef. */
-function getTableName(table: TableDef<any>): string {
-  return (table as any)._.name;
+/** Extract the table name from a table definition. */
+function getTableName(table: AnyTable): string {
+  return table._.name;
 }
 
 /** Extract the column name from a ColumnDef. */
@@ -42,7 +42,7 @@ function compileWhere(condition?: Condition): { whereSql: string; params: unknow
  * @param condition - Optional WHERE condition
  * @returns The count as a number
  */
-export function count<T extends TableDef<any>>(
+export function count<T extends AnyTable>(
   client: Database,
   table: T,
   condition?: Condition,
@@ -50,7 +50,7 @@ export function count<T extends TableDef<any>>(
   const tableName = getTableName(table);
   const { whereSql, params } = compileWhere(condition);
   const sql = `SELECT count(*) as cnt FROM ${tableName}${whereSql}`;
-  const result = client.prepare(sql).get(...(params as any)) as { cnt: number };
+  const result = client.prepare(sql).get(...(params as SQLQueryBindings[])) as { cnt: number };
   return result.cnt;
 }
 
@@ -61,7 +61,7 @@ export function count<T extends TableDef<any>>(
  * @param condition - Optional WHERE condition
  * @returns The count as a number
  */
-export function countColumn<T extends TableDef<any>, C extends ColumnDef<any, any>>(
+export function countColumn<T extends AnyTable, C extends ColumnDef<any, any>>(
   client: Database,
   table: T,
   column: C,
@@ -71,7 +71,7 @@ export function countColumn<T extends TableDef<any>, C extends ColumnDef<any, an
   const columnName = getColumnName(column);
   const { whereSql, params } = compileWhere(condition);
   const sql = `SELECT count(${columnName}) as cnt FROM ${tableName}${whereSql}`;
-  const result = client.prepare(sql).get(...(params as any)) as { cnt: number };
+  const result = client.prepare(sql).get(...(params as SQLQueryBindings[])) as { cnt: number };
   return result.cnt;
 }
 
@@ -82,7 +82,7 @@ export function countColumn<T extends TableDef<any>, C extends ColumnDef<any, an
  * @param condition - Optional WHERE condition
  * @returns The sum as a number, or null if no rows match
  */
-export function sum<T extends TableDef<any>, C extends ColumnDef<any, any>>(
+export function sum<T extends AnyTable, C extends ColumnDef<any, any>>(
   client: Database,
   table: T,
   column: C,
@@ -92,7 +92,7 @@ export function sum<T extends TableDef<any>, C extends ColumnDef<any, any>>(
   const columnName = getColumnName(column);
   const { whereSql, params } = compileWhere(condition);
   const sql = `SELECT sum(${columnName}) as total FROM ${tableName}${whereSql}`;
-  const result = client.prepare(sql).get(...(params as any)) as { total: number | null };
+  const result = client.prepare(sql).get(...(params as SQLQueryBindings[])) as { total: number | null };
   return result.total;
 }
 
@@ -103,7 +103,7 @@ export function sum<T extends TableDef<any>, C extends ColumnDef<any, any>>(
  * @param condition - Optional WHERE condition
  * @returns The average as a number, or null if no rows match
  */
-export function avg<T extends TableDef<any>, C extends ColumnDef<any, any>>(
+export function avg<T extends AnyTable, C extends ColumnDef<any, any>>(
   client: Database,
   table: T,
   column: C,
@@ -113,7 +113,7 @@ export function avg<T extends TableDef<any>, C extends ColumnDef<any, any>>(
   const columnName = getColumnName(column);
   const { whereSql, params } = compileWhere(condition);
   const sql = `SELECT avg(${columnName}) as average FROM ${tableName}${whereSql}`;
-  const result = client.prepare(sql).get(...(params as any)) as { average: number | null };
+  const result = client.prepare(sql).get(...(params as SQLQueryBindings[])) as { average: number | null };
   return result.average;
 }
 
@@ -124,7 +124,7 @@ export function avg<T extends TableDef<any>, C extends ColumnDef<any, any>>(
  * @param condition - Optional WHERE condition
  * @returns The minimum value, or null if no rows match
  */
-export function min<T extends TableDef<any>, C extends ColumnDef<any, any>>(
+export function min<T extends AnyTable, C extends ColumnDef<any, any>>(
   client: Database,
   table: T,
   column: C,
@@ -134,7 +134,7 @@ export function min<T extends TableDef<any>, C extends ColumnDef<any, any>>(
   const columnName = getColumnName(column);
   const { whereSql, params } = compileWhere(condition);
   const sql = `SELECT min(${columnName}) as minimum FROM ${tableName}${whereSql}`;
-  const result = client.prepare(sql).get(...(params as any)) as { minimum: number | null };
+  const result = client.prepare(sql).get(...(params as SQLQueryBindings[])) as { minimum: number | null };
   return result.minimum;
 }
 
@@ -145,7 +145,7 @@ export function min<T extends TableDef<any>, C extends ColumnDef<any, any>>(
  * @param condition - Optional WHERE condition
  * @returns The maximum value, or null if no rows match
  */
-export function max<T extends TableDef<any>, C extends ColumnDef<any, any>>(
+export function max<T extends AnyTable, C extends ColumnDef<any, any>>(
   client: Database,
   table: T,
   column: C,
@@ -155,6 +155,6 @@ export function max<T extends TableDef<any>, C extends ColumnDef<any, any>>(
   const columnName = getColumnName(column);
   const { whereSql, params } = compileWhere(condition);
   const sql = `SELECT max(${columnName}) as maximum FROM ${tableName}${whereSql}`;
-  const result = client.prepare(sql).get(...(params as any)) as { maximum: number | null };
+  const result = client.prepare(sql).get(...(params as SQLQueryBindings[])) as { maximum: number | null };
   return result.maximum;
 }

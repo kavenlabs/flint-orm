@@ -87,6 +87,11 @@ export interface DateColumnDefWithDefault extends DateColumnDef {
 // Internal builder
 // -----------------------------------------------------------------------
 
+/** Cast null to a column's type — used when SQLite returns NULL for a nullable column. */
+function nullCast<T>(): T {
+  return null as unknown as T;
+}
+
 function makeColumn<T, S extends string>(config: {
   name: string;
   sqlType: S;
@@ -149,7 +154,7 @@ export function text(name?: string): ColumnDef<string, "text"> {
     name: name ?? "",
     sqlType: "text",
     encode: (v) => v,
-    decode: (v) => (v == null ? (null as unknown as string) : (v as string)),
+    decode: (v) => (v == null ? nullCast<string>() : (v as string)),
   });
 }
 
@@ -158,7 +163,7 @@ export function integer(name?: string): IntegerColumnDef<"integer"> {
     name: name ?? "",
     sqlType: "integer",
     encode: (v) => v,
-    decode: (v) => (v == null ? (null as unknown as number) : Number(v)),
+    decode: (v) => (v == null ? nullCast<number>() : Number(v)),
   });
 
   const intCol: IntegerColumnDef<"integer"> = {
@@ -192,7 +197,7 @@ export function boolean(name?: string): ColumnDef<boolean, "integer"> {
     name: name ?? "",
     sqlType: "integer",
     encode: (v) => (v ? 1 : 0),
-    decode: (v) => (v == null ? (null as unknown as boolean) : Boolean(v)),
+    decode: (v) => (v == null ? nullCast<boolean>() : Boolean(v)),
   });
 }
 
@@ -203,7 +208,7 @@ export function json<T>(name?: string): ColumnDef<T, "text"> {
     sqlType: "text",
     encode: (v) => (v == null ? null : JSON.stringify(v)),
     decode: (v) =>
-      v == null ? (null as unknown as T) : (JSON.parse(v as string) as T),
+      v == null ? nullCast<T>() : (JSON.parse(v as string) as T),
   });
 }
 
@@ -213,7 +218,7 @@ export function date(name?: string): DateColumnDef {
     name: name ?? "",
     sqlType: "integer",
     encode: (v) => (v == null ? null : v.getTime()),
-    decode: (v) => (v == null ? (null as unknown as Date) : new Date(v as number)),
+    decode: (v) => (v == null ? nullCast<Date>() : new Date(v as number)),
   });
 
   const dateCol: DateColumnDef = {
@@ -249,6 +254,6 @@ export function real(name?: string): ColumnDef<number, "real"> {
     name: name ?? "",
     sqlType: "real",
     encode: (v) => v,
-    decode: (v) => (v == null ? (null as unknown as number) : Number(v)),
+    decode: (v) => (v == null ? nullCast<number>() : Number(v)),
   });
 }

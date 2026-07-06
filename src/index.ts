@@ -22,7 +22,7 @@ export type {
   DateColumnDefWithDefault,
 } from "./schema/columns";
 export { table, snakeCase } from "./schema/table";
-export type { InferRow, InsertRow, TableDef } from "./schema/table";
+export type { InferRow, InsertRow, TableDef, AnyTable } from "./schema/table";
 
 // Conditions: eq, and, or, gt, gte, lt, lte, neq, isIn, isNotIn, isNull, isNotNull, like, glob, between (flint-orm/conditions)
 export { eq, and, or, gt, gte, lt, lte, neq, isIn, isNotIn, isNull, isNotNull, like, glob, between } from "./query/conditions";
