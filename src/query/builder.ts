@@ -144,6 +144,9 @@ export class SelectBuilder<T extends TableDef<any>, C extends keyof InferRow<T> 
   #table: T;
   #conditions: Condition[];
   #selectedColumns: C[] | null;
+  #orderByClauses: { column: ColumnDef<any, any>; direction: "asc" | "desc" }[];
+  #limitValue: number | null;
+  #offsetValue: number | null;
 
   constructor(
     client: DatabaseClient,
@@ -151,16 +154,22 @@ export class SelectBuilder<T extends TableDef<any>, C extends keyof InferRow<T> 
     table: T,
     conditions: Condition[] = [],
     selectedColumns: C[] | null = null,
+    orderByClauses: { column: ColumnDef<any, any>; direction: "asc" | "desc" }[] = [],
+    limitValue: number | null = null,
+    offsetValue: number | null = null,
   ) {
     this.#client = client;
     this.#tableName = tableName;
     this.#table = table;
     this.#conditions = conditions;
     this.#selectedColumns = selectedColumns;
+    this.#orderByClauses = orderByClauses;
+    this.#limitValue = limitValue;
+    this.#offsetValue = offsetValue;
   }
 
   where(condition: Condition): SelectBuilder<T, C> {
-    return new SelectBuilder(this.#client, this.#tableName, this.#table, [...this.#conditions, condition], this.#selectedColumns);
+    return new SelectBuilder(this.#client, this.#tableName, this.#table, [...this.#conditions, condition], this.#selectedColumns, this.#orderByClauses, this.#limitValue, this.#offsetValue);
   }
 
   /**
@@ -168,7 +177,7 @@ export class SelectBuilder<T extends TableDef<any>, C extends keyof InferRow<T> 
    * Each string must be a real key on the table.
    */
   columns<K extends keyof InferRow<T>>(keys: K[]): SelectBuilder<T, K> {
-    return new SelectBuilder(this.#client, this.#tableName, this.#table, this.#conditions, keys as any);
+    return new SelectBuilder(this.#client, this.#tableName, this.#table, this.#conditions, keys as any, this.#orderByClauses, this.#limitValue, this.#offsetValue);
   }
 
   /**
@@ -176,7 +185,33 @@ export class SelectBuilder<T extends TableDef<any>, C extends keyof InferRow<T> 
    * Adds LIMIT 1 to the SQL.
    */
   single(): SingleSelectBuilder<T, C> {
-    return new SingleSelectBuilder(this.#client, this.#tableName, this.#table, this.#conditions, this.#selectedColumns);
+    return new SingleSelectBuilder(this.#client, this.#tableName, this.#table, this.#conditions, this.#selectedColumns, this.#orderByClauses, this.#offsetValue);
+  }
+
+  /**
+   * Add an ORDER BY clause. Multiple calls stack.
+   * @param key - Column key to sort by (e.g. "name")
+   * @param direction - "asc" or "desc" (default: "asc")
+   */
+  orderBy<K extends keyof InferRow<T>>(key: K, direction: "asc" | "desc" = "asc"): SelectBuilder<T, C> {
+    const column = (this.#table as any)[key] as ColumnDef<any, any>;
+    return new SelectBuilder(this.#client, this.#tableName, this.#table, this.#conditions, this.#selectedColumns, [...this.#orderByClauses, { column, direction }], this.#limitValue, this.#offsetValue);
+  }
+
+  /**
+   * Limit the number of results.
+   * @param n - Maximum number of rows to return
+   */
+  limit(n: number): SelectBuilder<T, C> {
+    return new SelectBuilder(this.#client, this.#tableName, this.#table, this.#conditions, this.#selectedColumns, this.#orderByClauses, n, this.#offsetValue);
+  }
+
+  /**
+   * Skip N rows before returning results.
+   * @param n - Number of rows to skip
+   */
+  offset(n: number): SelectBuilder<T, C> {
+    return new SelectBuilder(this.#client, this.#tableName, this.#table, this.#conditions, this.#selectedColumns, this.#orderByClauses, this.#limitValue, n);
   }
 
   toSQL(): { sql: string; params: unknown[] } {
@@ -185,6 +220,12 @@ export class SelectBuilder<T extends TableDef<any>, C extends keyof InferRow<T> 
     let sql = `SELECT ${cols} FROM ${this.#tableName}`;
     const where = compileConditions(this.#conditions, params);
     if (where !== "1=1") sql += ` WHERE ${where}`;
+    if (this.#orderByClauses.length > 0) {
+      const orderClauses = this.#orderByClauses.map((o) => `${o.column.name} ${o.direction.toUpperCase()}`).join(", ");
+      sql += ` ORDER BY ${orderClauses}`;
+    }
+    if (this.#limitValue !== null) sql += ` LIMIT ${this.#limitValue}`;
+    if (this.#offsetValue !== null) sql += ` OFFSET ${this.#offsetValue}`;
     return { sql, params };
   }
 
@@ -208,6 +249,8 @@ export class SingleSelectBuilder<T extends TableDef<any>, C extends keyof InferR
   #table: T;
   #conditions: Condition[];
   #selectedColumns: C[] | null;
+  #orderByClauses: { column: ColumnDef<any, any>; direction: "asc" | "desc" }[];
+  #offsetValue: number | null;
 
   constructor(
     client: DatabaseClient,
@@ -215,16 +258,29 @@ export class SingleSelectBuilder<T extends TableDef<any>, C extends keyof InferR
     table: T,
     conditions: Condition[],
     selectedColumns: C[] | null = null,
+    orderByClauses: { column: ColumnDef<any, any>; direction: "asc" | "desc" }[] = [],
+    offsetValue: number | null = null,
   ) {
     this.#client = client;
     this.#tableName = tableName;
     this.#table = table;
     this.#conditions = conditions;
     this.#selectedColumns = selectedColumns;
+    this.#orderByClauses = orderByClauses;
+    this.#offsetValue = offsetValue;
   }
 
   where(condition: Condition): SingleSelectBuilder<T, C> {
-    return new SingleSelectBuilder(this.#client, this.#tableName, this.#table, [...this.#conditions, condition], this.#selectedColumns);
+    return new SingleSelectBuilder(this.#client, this.#tableName, this.#table, [...this.#conditions, condition], this.#selectedColumns, this.#orderByClauses, this.#offsetValue);
+  }
+
+  orderBy<K extends keyof InferRow<T>>(key: K, direction: "asc" | "desc" = "asc"): SingleSelectBuilder<T, C> {
+    const column = (this.#table as any)[key] as ColumnDef<any, any>;
+    return new SingleSelectBuilder(this.#client, this.#tableName, this.#table, this.#conditions, this.#selectedColumns, [...this.#orderByClauses, { column, direction }], this.#offsetValue);
+  }
+
+  offset(n: number): SingleSelectBuilder<T, C> {
+    return new SingleSelectBuilder(this.#client, this.#tableName, this.#table, this.#conditions, this.#selectedColumns, this.#orderByClauses, n);
   }
 
   toSQL(): { sql: string; params: unknown[] } {
@@ -233,7 +289,12 @@ export class SingleSelectBuilder<T extends TableDef<any>, C extends keyof InferR
     let sql = `SELECT ${cols} FROM ${this.#tableName}`;
     const where = compileConditions(this.#conditions, params);
     if (where !== "1=1") sql += ` WHERE ${where}`;
+    if (this.#orderByClauses.length > 0) {
+      const orderClauses = this.#orderByClauses.map((o) => `${o.column.name} ${o.direction.toUpperCase()}`).join(", ");
+      sql += ` ORDER BY ${orderClauses}`;
+    }
     sql += " LIMIT 1";
+    if (this.#offsetValue !== null) sql += ` OFFSET ${this.#offsetValue}`;
     return { sql, params };
   }
 
@@ -281,6 +342,9 @@ export interface JoinBuilder<
   on<NewChild extends TableDef<any>>(child: NewChild, condition: Condition): JoinBuilder<Parent, [...Joined, NewChild], ParentCols>;
   columns<K extends keyof InferRow<Parent>>(keys: K[]): JoinBuilder<Parent, Joined, K>;
   where(condition: Condition): JoinBuilder<Parent, Joined, ParentCols>;
+  orderBy<K extends keyof InferRow<Parent>>(key: K, direction?: "asc" | "desc"): JoinBuilder<Parent, Joined, ParentCols>;
+  limit(n: number): JoinBuilder<Parent, Joined, ParentCols>;
+  offset(n: number): JoinBuilder<Parent, Joined, ParentCols>;
   single(): SingleJoinBuilder<Parent, Joined, ParentCols>;
   toSQL(): { sql: string; params: unknown[] };
   execute(): JoinResult<Parent, Joined, ParentCols>[];
@@ -293,6 +357,8 @@ export interface SingleJoinBuilder<
   ParentCols extends keyof InferRow<Parent> = keyof InferRow<Parent>,
 > {
   where(condition: Condition): SingleJoinBuilder<Parent, Joined, ParentCols>;
+  orderBy<K extends keyof InferRow<Parent>>(key: K, direction?: "asc" | "desc"): SingleJoinBuilder<Parent, Joined, ParentCols>;
+  offset(n: number): SingleJoinBuilder<Parent, Joined, ParentCols>;
   toSQL(): { sql: string; params: unknown[] };
   execute(): JoinResult<Parent, Joined, ParentCols> | null;
 }
@@ -348,6 +414,9 @@ export class JoinBuilderImpl<
   #joinType: JoinType;
   #conditions: Condition[];
   #selectedColumns: ParentCols[] | null;
+  #orderByClauses: { column: ColumnDef<any, any>; direction: "asc" | "desc" }[];
+  #limitValue: number | null;
+  #offsetValue: number | null;
 
   constructor(
     client: DatabaseClient,
@@ -357,6 +426,9 @@ export class JoinBuilderImpl<
     joinType: JoinType,
     conditions: Condition[] = [],
     selectedColumns: ParentCols[] | null = null,
+    orderByClauses: { column: ColumnDef<any, any>; direction: "asc" | "desc" }[] = [],
+    limitValue: number | null = null,
+    offsetValue: number | null = null,
   ) {
     this.#client = client;
     this.#parent = parent;
@@ -365,6 +437,9 @@ export class JoinBuilderImpl<
     this.#joinType = joinType;
     this.#conditions = conditions;
     this.#selectedColumns = selectedColumns;
+    this.#orderByClauses = orderByClauses;
+    this.#limitValue = limitValue;
+    this.#offsetValue = offsetValue;
   }
 
   /**
@@ -408,6 +483,55 @@ export class JoinBuilderImpl<
       this.#joinType,
       this.#conditions,
       keys as any,
+      this.#orderByClauses,
+      this.#limitValue,
+      this.#offsetValue,
+    ) as any;
+  }
+
+  orderBy<K extends keyof InferRow<Parent>>(key: K, direction: "asc" | "desc" = "asc"): JoinBuilder<Parent, Joined, ParentCols> {
+    const column = (this.#parent as any)[key] as ColumnDef<any, any>;
+    return new JoinBuilderImpl(
+      this.#client,
+      this.#parent,
+      this.#parentName,
+      this.#joins,
+      this.#joinType,
+      this.#conditions,
+      this.#selectedColumns,
+      [...this.#orderByClauses, { column, direction }],
+      this.#limitValue,
+      this.#offsetValue,
+    ) as any;
+  }
+
+  limit(n: number): JoinBuilder<Parent, Joined, ParentCols> {
+    return new JoinBuilderImpl(
+      this.#client,
+      this.#parent,
+      this.#parentName,
+      this.#joins,
+      this.#joinType,
+      this.#conditions,
+      this.#selectedColumns,
+      this.#orderByClauses,
+      n,
+      this.#offsetValue,
+    ) as any;
+  }
+
+  offset(n: number): JoinBuilder<Parent, Joined, ParentCols> {
+    return new JoinBuilderImpl(
+      this.#client,
+      this.#parent,
+      this.#parentName,
+      this.#joins,
+      this.#joinType,
+      this.#conditions,
+      this.#selectedColumns,
+      this.#orderByClauses,
+      this.#limitValue,
+      n,
     ) as any;
   }
 
@@ -420,6 +544,8 @@ export class JoinBuilderImpl<
       this.#joinType,
       this.#conditions,
       this.#selectedColumns,
+      this.#orderByClauses,
+      this.#offsetValue,
     ) as any;
   }
 
@@ -447,6 +573,12 @@ export class JoinBuilderImpl<
 
     let sql = `SELECT ${parentCols}${childCols.length ? ", " + childCols.join(", ") : ""} FROM ${this.#parentName} ${joinClauses.join(" ")}`;
     if (where !== "1=1") sql += ` WHERE ${where}`;
+    if (this.#orderByClauses.length > 0) {
+      const orderClauses = this.#orderByClauses.map((o) => `${o.column.name} ${o.direction.toUpperCase()}`).join(", ");
+      sql += ` ORDER BY ${orderClauses}`;
+    }
+    if (this.#limitValue !== null) sql += ` LIMIT ${this.#limitValue}`;
+    if (this.#offsetValue !== null) sql += ` OFFSET ${this.#offsetValue}`;
 
     return { sql, params: [...joinParams, ...whereParams] };
   }
@@ -545,6 +677,8 @@ export class SingleJoinBuilderImpl<
   #joinType: JoinType;
   #conditions: Condition[];
   #selectedColumns: ParentCols[] | null;
+  #orderByClauses: { column: ColumnDef<any, any>; direction: "asc" | "desc" }[];
+  #offsetValue: number | null;
 
   constructor(
     client: DatabaseClient,
@@ -554,6 +688,8 @@ export class SingleJoinBuilderImpl<
     joinType: JoinType,
     conditions: Condition[],
     selectedColumns: ParentCols[] | null = null,
+    orderByClauses: { column: ColumnDef<any, any>; direction: "asc" | "desc" }[] = [],
+    offsetValue: number | null = null,
   ) {
     this.#client = client;
     this.#parent = parent;
@@ -562,6 +698,8 @@ export class SingleJoinBuilderImpl<
     this.#joinType = joinType;
     this.#conditions = conditions;
     this.#selectedColumns = selectedColumns;
+    this.#orderByClauses = orderByClauses;
+    this.#offsetValue = offsetValue;
   }
 
   where(condition: Condition): SingleJoinBuilderImpl<Parent, Joined, ParentCols> {
@@ -573,6 +711,37 @@ export class SingleJoinBuilderImpl<
       this.#joinType,
       [...this.#conditions, condition],
       this.#selectedColumns,
+      this.#orderByClauses,
+      this.#offsetValue,
+    );
+  }
+
+  orderBy<K extends keyof InferRow<Parent>>(key: K, direction: "asc" | "desc" = "asc"): SingleJoinBuilderImpl<Parent, Joined, ParentCols> {
+    const column = (this.#parent as any)[key] as ColumnDef<any, any>;
+    return new SingleJoinBuilderImpl(
+      this.#client,
+      this.#parent,
+      this.#parentName,
+      this.#joins,
+      this.#joinType,
+      this.#conditions,
+      this.#selectedColumns,
+      [...this.#orderByClauses, { column, direction }],
+      this.#offsetValue,
+    );
+  }
+
+  offset(n: number): SingleJoinBuilderImpl<Parent, Joined, ParentCols> {
+    return new SingleJoinBuilderImpl(
+      this.#client,
+      this.#parent,
+      this.#parentName,
+      this.#joins,
+      this.#joinType,
+      this.#conditions,
+      this.#selectedColumns,
+      this.#orderByClauses,
+      n,
     );
   }
 
@@ -600,6 +769,12 @@ export class SingleJoinBuilderImpl<
 
     let sql = `SELECT ${parentCols}${childCols.length ? ", " + childCols.join(", ") : ""} FROM ${this.#parentName} ${joinClauses.join(" ")}`;
     if (where !== "1=1") sql += ` WHERE ${where}`;
+    if (this.#orderByClauses.length > 0) {
+      const orderClauses = this.#orderByClauses.map((o) => `${o.column.name} ${o.direction.toUpperCase()}`).join(", ");
+      sql += ` ORDER BY ${orderClauses}`;
+    }
+    sql += " LIMIT 1";
+    if (this.#offsetValue !== null) sql += ` OFFSET ${this.#offsetValue}`;
 
     return { sql, params: [...joinParams, ...whereParams] };
   }
