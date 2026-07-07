@@ -169,12 +169,7 @@ console.log();
 
 console.log("── .columns() + .where() ──");
 
-const bobName = db
-  .select()
-  .from(users)
-  .columns(["name"])
-  .where(eq(users.id, "u2"))
-  .execute();
+const bobName = db.select().from(users).columns(["name"]).where(eq(users.id, "u2")).execute();
 console.log("Bob's name only:", JSON.stringify(bobName));
 console.log();
 
@@ -188,11 +183,19 @@ console.log();
 console.log("── leftJoin: orders → orderItems (one-to-many) ──");
 
 // Insert order items for o1
-db.insert(orderItems).values({ id: "oi1", orderId: "o1", productName: "Widget", quantity: 2 }).execute();
-db.insert(orderItems).values({ id: "oi2", orderId: "o1", productName: "Gadget", quantity: 1 }).execute();
-db.insert(orderItems).values({ id: "oi3", orderId: "o1", productName: "Doohickey", quantity: 5 }).execute();
+db.insert(orderItems)
+  .values({ id: "oi1", orderId: "o1", productName: "Widget", quantity: 2 })
+  .execute();
+db.insert(orderItems)
+  .values({ id: "oi2", orderId: "o1", productName: "Gadget", quantity: 1 })
+  .execute();
+db.insert(orderItems)
+  .values({ id: "oi3", orderId: "o1", productName: "Doohickey", quantity: 5 })
+  .execute();
 // Insert one item for o2
-db.insert(orderItems).values({ id: "oi4", orderId: "o2", productName: "Thingamajig", quantity: 3 }).execute();
+db.insert(orderItems)
+  .values({ id: "oi4", orderId: "o2", productName: "Thingamajig", quantity: 3 })
+  .execute();
 
 const ordersWithItems = db
   .leftJoin(orders)
@@ -225,7 +228,10 @@ console.log(JSON.stringify(ordersNarrowed, null, 2));
 // Should have: { id, total, __children: [...] }
 // Parent should NOT have "userId" — only "id" and "total"
 // Child data should arrive fully (all orderItems fields)
-console.log("Parent keys:", Object.keys(ordersNarrowed[0] ?? {}).filter((k) => k !== "orderItems"));
+console.log(
+  "Parent keys:",
+  Object.keys(ordersNarrowed[0] ?? {}).filter((k) => k !== "orderItems"),
+);
 console.log("Child keys:", Object.keys((ordersNarrowed[0] as any)?.orderItems?.[0] ?? {}));
 console.log();
 
@@ -242,7 +248,10 @@ const innerJoined = db
   .execute();
 
 console.log("Inner join result (orders with items only):");
-console.log("Order IDs:", innerJoined.map((r) => r.id));
+console.log(
+  "Order IDs:",
+  innerJoined.map((r) => r.id),
+);
 // o3 should NOT appear (no matching items)
 console.log();
 
@@ -250,12 +259,7 @@ console.log();
 
 console.log("── .single() found ──");
 
-const singleBob = db
-  .select()
-  .from(users)
-  .where(eq(users.id, "u2"))
-  .single()
-  .execute();
+const singleBob = db.select().from(users).where(eq(users.id, "u2")).single().execute();
 
 console.log("Single Bob:", JSON.stringify(singleBob));
 console.log("Is null?", singleBob === null);
@@ -265,12 +269,7 @@ console.log();
 
 console.log("── .single() not found (should be null) ──");
 
-const notFound = db
-  .select()
-  .from(users)
-  .where(eq(users.id, "nonexistent"))
-  .single()
-  .execute();
+const notFound = db.select().from(users).where(eq(users.id, "nonexistent")).single().execute();
 
 console.log("Not found result:", notFound);
 console.log("Is null?", notFound === null);
@@ -304,23 +303,11 @@ console.log(
     .toSQL(),
 );
 
-console.log(
-  "columns:",
-  db.select().from(users).columns(["name", "active"]).toSQL(),
-);
+console.log("columns:", db.select().from(users).columns(["name", "active"]).toSQL());
 
-console.log(
-  "single:",
-  db.select().from(users).where(eq(users.id, "u2")).single().toSQL(),
-);
+console.log("single:", db.select().from(users).where(eq(users.id, "u2")).single().toSQL());
 
-console.log(
-  "join:",
-  db
-    .leftJoin(orders)
-    .on(orderItems, eq(orders.id, orderItems.orderId))
-    .toSQL(),
-);
+console.log("join:", db.leftJoin(orders).on(orderItems, eq(orders.id, orderItems.orderId)).toSQL());
 
 console.log(
   "insert:",
@@ -371,7 +358,10 @@ console.log("After update:", JSON.stringify(p1After, null, 2));
 console.log("updatedAt is Date?", p1After?.updatedAt instanceof Date);
 
 // Update with explicit updatedAt — should be ignored (onUpdate always wins)
-db.update(posts).set({ title: "Hello v3", updatedAt: new Date(0) }).where(eq(posts.id, "p1")).execute();
+db.update(posts)
+  .set({ title: "Hello v3", updatedAt: new Date(0) })
+  .where(eq(posts.id, "p1"))
+  .execute();
 const p1v3 = db.select().from(posts).where(eq(posts.id, "p1")).single().execute();
 console.log("After update with explicit date:", JSON.stringify(p1v3, null, 2));
 console.log("updatedAt is not epoch?", (p1v3?.updatedAt as Date)?.getTime() !== 0);
@@ -426,7 +416,10 @@ try {
 
 // Valid in JOIN: using columns from both tables
 try {
-  db.leftJoin(orders).on(orderItems, eq(orders.id, orderItems.orderId)).where(eq(orders.id, "o1")).toSQL();
+  db.leftJoin(orders)
+    .on(orderItems, eq(orders.id, orderItems.orderId))
+    .where(eq(orders.id, "o1"))
+    .toSQL();
   console.log("✓ valid column usage in JOIN passed");
 } catch (e) {
   console.log("✗ should not have thrown:", (e as Error).message);
@@ -439,41 +432,41 @@ console.log();
 console.log("── like / glob ──");
 
 // Insert test data
-db.insert(users).values({ id: "u4", name: "Charlie", active: true, metadata: null as any }).execute();
-db.insert(users).values({ id: "u5", name: "David", active: false, metadata: null as any }).execute();
+db.insert(users)
+  .values({ id: "u4", name: "Charlie", active: true, metadata: null as any })
+  .execute();
+db.insert(users)
+  .values({ id: "u5", name: "David", active: false, metadata: null as any })
+  .execute();
 
 // LIKE: case-insensitive, % = any chars, _ = single char
-const likeResult = db
-  .select()
-  .from(users)
-  .where(like(users.name, "%li%"))
-  .execute();
-console.log("LIKE '%li%':", likeResult.map((r) => r.name));
+const likeResult = db.select().from(users).where(like(users.name, "%li%")).execute();
+console.log(
+  "LIKE '%li%':",
+  likeResult.map((r) => r.name),
+);
 // Should match: Alice, Charlie
 
-const likeExact = db
-  .select()
-  .from(users)
-  .where(like(users.name, "Al_ce"))
-  .execute();
-console.log("LIKE 'Al_ce':", likeExact.map((r) => r.name));
+const likeExact = db.select().from(users).where(like(users.name, "Al_ce")).execute();
+console.log(
+  "LIKE 'Al_ce':",
+  likeExact.map((r) => r.name),
+);
 // Should match: Alice
 
 // GLOB: case-sensitive, * = any chars, ? = single char
-const globResult = db
-  .select()
-  .from(users)
-  .where(glob(users.name, "A*"))
-  .execute();
-console.log("GLOB 'A*':", globResult.map((r) => r.name));
+const globResult = db.select().from(users).where(glob(users.name, "A*")).execute();
+console.log(
+  "GLOB 'A*':",
+  globResult.map((r) => r.name),
+);
 // Should match: Alice (case-sensitive)
 
-const globLower = db
-  .select()
-  .from(users)
-  .where(glob(users.name, "a*"))
-  .execute();
-console.log("GLOB 'a*':", globLower.map((r) => r.name));
+const globLower = db.select().from(users).where(glob(users.name, "a*")).execute();
+console.log(
+  "GLOB 'a*':",
+  globLower.map((r) => r.name),
+);
 // Should match: nothing (case-sensitive, no lowercase names starting with 'a')
 
 // toSQL examples
@@ -492,7 +485,10 @@ const betweenResult = db
   .from(orders)
   .where(between(orders.total, 100, 200))
   .execute();
-console.log("BETWEEN 100 AND 200:", betweenResult.map((r) => ({ id: r.id, total: r.total })));
+console.log(
+  "BETWEEN 100 AND 200:",
+  betweenResult.map((r) => ({ id: r.id, total: r.total })),
+);
 // Should match: o1 (total: 100)
 
 // Query orders with total between 0 and 150
@@ -501,11 +497,21 @@ const betweenLow = db
   .from(orders)
   .where(between(orders.total, 0, 150))
   .execute();
-console.log("BETWEEN 0 AND 150:", betweenLow.map((r) => ({ id: r.id, total: r.total })));
+console.log(
+  "BETWEEN 0 AND 150:",
+  betweenLow.map((r) => ({ id: r.id, total: r.total })),
+);
 // Should match: o1 (100)
 
 // toSQL example
-console.log("between SQL:", db.select().from(orders).where(between(orders.total, 50, 300)).toSQL());
+console.log(
+  "between SQL:",
+  db
+    .select()
+    .from(orders)
+    .where(between(orders.total, 50, 300))
+    .toSQL(),
+);
 
 console.log();
 
@@ -518,22 +524,19 @@ db.insert(orders).values({ id: "o4", userId: "u2", total: 50 }).execute();
 db.insert(orders).values({ id: "o5", userId: "u2", total: 75 }).execute();
 
 // Without distinct - should return all userIds
-const allUserIds = db
-  .select()
-  .from(orders)
-  .columns(["userId"])
-  .execute();
-console.log("All userIds:", allUserIds.map((r) => r.userId));
+const allUserIds = db.select().from(orders).columns(["userId"]).execute();
+console.log(
+  "All userIds:",
+  allUserIds.map((r) => r.userId),
+);
 // Should have: u2, u2, u2, u2, u2 (5 entries)
 
 // With distinct - should return unique userIds
-const uniqueUserIds = db
-  .select()
-  .from(orders)
-  .columns(["userId"])
-  .distinct()
-  .execute();
-console.log("Distinct userIds:", uniqueUserIds.map((r) => r.userId));
+const uniqueUserIds = db.select().from(orders).columns(["userId"]).distinct().execute();
+console.log(
+  "Distinct userIds:",
+  uniqueUserIds.map((r) => r.userId),
+);
 // Should have: u2 (1 entry)
 
 // toSQL example
@@ -602,27 +605,42 @@ console.log("── comparison operators ──");
 
 // gt — orders with total > 100
 const gtResult = db.select().from(orders).where(gt(orders.total, 100)).execute();
-console.log("gt(total, 100):", gtResult.map((r) => ({ id: r.id, total: r.total })));
+console.log(
+  "gt(total, 100):",
+  gtResult.map((r) => ({ id: r.id, total: r.total })),
+);
 // Should be: o2 (250)
 
 // gte — orders with total >= 100
 const gteResult = db.select().from(orders).where(gte(orders.total, 100)).execute();
-console.log("gte(total, 100):", gteResult.map((r) => ({ id: r.id, total: r.total })));
+console.log(
+  "gte(total, 100):",
+  gteResult.map((r) => ({ id: r.id, total: r.total })),
+);
 // Should be: o1 (100), o2 (250)
 
 // lt — orders with total < 100
 const ltResult = db.select().from(orders).where(lt(orders.total, 100)).execute();
-console.log("lt(total, 100):", ltResult.map((r) => ({ id: r.id, total: r.total })));
+console.log(
+  "lt(total, 100):",
+  ltResult.map((r) => ({ id: r.id, total: r.total })),
+);
 // Should be: o3 (0), o4 (50), o5 (75)
 
 // lte — orders with total <= 100
 const lteResult = db.select().from(orders).where(lte(orders.total, 100)).execute();
-console.log("lte(total, 100):", lteResult.map((r) => ({ id: r.id, total: r.total })));
+console.log(
+  "lte(total, 100):",
+  lteResult.map((r) => ({ id: r.id, total: r.total })),
+);
 // Should be: o1 (100), o3 (0), o4 (50), o5 (75)
 
 // neq — orders with total != 100
 const neqResult = db.select().from(orders).where(neq(orders.total, 100)).execute();
-console.log("neq(total, 100):", neqResult.map((r) => ({ id: r.id, total: r.total })));
+console.log(
+  "neq(total, 100):",
+  neqResult.map((r) => ({ id: r.id, total: r.total })),
+);
 // Should be: o2 (250), o3 (0), o4 (50), o5 (75)
 
 // toSQL examples
@@ -636,7 +654,9 @@ console.log();
 console.log("── on conflict ──");
 
 // Insert a user
-db.insert(users).values({ id: "u10", name: "TestUser", active: true, metadata: null as any }).execute();
+db.insert(users)
+  .values({ id: "u10", name: "TestUser", active: true, metadata: null as any })
+  .execute();
 const u10Before = db.select().from(users).where(eq(users.id, "u10")).single().execute();
 console.log("u10 before:", u10Before?.name);
 // Should be: TestUser
@@ -663,8 +683,22 @@ console.log("u10 after doUpdate:", u10AfterUpdate?.name);
 // Should be: UpdatedUser
 
 // toSQL examples
-console.log("doNothing SQL:", db.insert(users).values({ id: "u99", name: "x", active: true, metadata: null as any }).onConflictDoNothing().toSQL());
-console.log("doUpdate SQL:", db.insert(users).values({ id: "u99", name: "x", active: true, metadata: null as any }).onConflictDoUpdate({ target: users.id, set: { name: "x" } }).toSQL());
+console.log(
+  "doNothing SQL:",
+  db
+    .insert(users)
+    .values({ id: "u99", name: "x", active: true, metadata: null as any })
+    .onConflictDoNothing()
+    .toSQL(),
+);
+console.log(
+  "doUpdate SQL:",
+  db
+    .insert(users)
+    .values({ id: "u99", name: "x", active: true, metadata: null as any })
+    .onConflictDoUpdate({ target: users.id, set: { name: "x" } })
+    .toSQL(),
+);
 
 console.log();
 
@@ -673,7 +707,9 @@ console.log();
 console.log("── db.raw ──");
 
 // Raw query with params
-const rawResult = db.raw<{ id: string; name: string }>("SELECT id, name FROM users WHERE id = ?", ["u10"]);
+const rawResult = db.raw<{ id: string; name: string }>("SELECT id, name FROM users WHERE id = ?", [
+  "u10",
+]);
 console.log("raw query:", rawResult);
 // Should be: [{ id: "u10", name: "UpdatedUser" }]
 
@@ -684,7 +720,10 @@ console.log("raw count:", rawCount[0]?.cnt);
 
 // Raw with no params
 const rawAll = db.raw<{ id: string }>("SELECT id FROM users ORDER BY id");
-console.log("raw all ids:", rawAll.map((r) => r.id));
+console.log(
+  "raw all ids:",
+  rawAll.map((r) => r.id),
+);
 
 console.log();
 

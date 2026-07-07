@@ -6,6 +6,23 @@ import { compileConditions, eq } from "./conditions";
 import type { TableDef, AnyTable, InferRow, InsertRow } from "../schema/table";
 import { FlintValidationError, FlintQueryError } from "../errors";
 
+// -----------------------------------------------------------------------
+// Type helpers
+// -----------------------------------------------------------------------
+
+/**
+ * Narrow a row type to specific columns using a mapped type.
+ * Unlike Pick, TypeScript eagerly evaluates { [K in C]: T[K] } to a concrete
+ * shape in hover info: { id: string; name: string } instead of Pick<...>.
+ */
+export type NarrowRow<T, C extends keyof T> = { [K in C]: T[K] };
+
+/**
+ * Force TypeScript to expand intersection/mapped types into a flat object
+ * in hover info: Prettify<{ id: string } & { name: string }> → { id: string; name: string }.
+ */
+export type Prettify<T> = { [K in keyof T]: T[K] } & {};
+
 // @internal Shared helpers
 /** @internal Cast params array to what bun:sqlite expects. */
 function bind(params: unknown[]): SQLQueryBindings[] {
@@ -39,14 +56,14 @@ function decodeSelectedRow<T extends AnyTable, C extends keyof InferRow<T>>(
   raw: Record<string, unknown>,
   tbl: T,
   keys: C[],
-): Pick<InferRow<T>, C> {
+): NarrowRow<InferRow<T>, C> {
   const out: Record<string, unknown> = {};
   for (const key of keys) {
     const col = getCol(tbl, key as string);
     out[key as string] = col.__internal.decode(raw[col.name]);
   }
   // SAFETY: built from the table's own columns, filtered to the requested keys
-  return out as Pick<InferRow<T>, C>;
+  return out as NarrowRow<InferRow<T>, C>;
 }
 
 /** @internal Find the primary key TS key of a table. */
@@ -182,16 +199,17 @@ export class SelectFromBuilder implements SelectStage1 {
   }
 }
 
-/** Full SELECT builder — available after `.from()`. */
-export class SelectBuilder<
-  T extends AnyTable,
-  C extends keyof InferRow<T> = keyof InferRow<T>,
-> implements Executable {
+/**
+ * Full SELECT builder — available after `.from()`.
+ * Returns `InferRow<T>[]` (all columns) from `execute()`.
+ * Call `.columns()` to narrow — returns a `NarrowedSelectBuilder`.
+ */
+export class SelectBuilder<T extends AnyTable> implements Executable {
   #client: DatabaseClient;
   #tableName: string;
   #table: T;
   #conditions: Condition[];
-  #selectedColumns: C[] | null;
+  #selectedColumns: (keyof InferRow<T>)[] | null;
   #orderByClauses: { column: ColumnDef<any, any>; direction: "asc" | "desc" }[];
   #limitValue: number | null;
   #offsetValue: number | null;
@@ -202,7 +220,7 @@ export class SelectBuilder<
     tableName: string,
     table: T,
     conditions: Condition[] = [],
-    selectedColumns: C[] | null = null,
+    selectedColumns: (keyof InferRow<T>)[] | null = null,
     orderByClauses: { column: ColumnDef<any, any>; direction: "asc" | "desc" }[] = [],
     limitValue: number | null = null,
     offsetValue: number | null = null,
@@ -220,7 +238,7 @@ export class SelectBuilder<
   }
 
   /** Add a WHERE condition. Multiple calls stack. */
-  where(condition: Condition): SelectBuilder<T, C> {
+  where(condition: Condition): SelectBuilder<T> {
     return new SelectBuilder(
       this.#client,
       this.#tableName,
@@ -236,17 +254,19 @@ export class SelectBuilder<
 
   /**
    * Narrow which columns appear in the result.
+   * Returns a `NarrowedSelectBuilder` with a clean `{ id: string; name: string }` return type.
    *
    * @example
-   * db.select().from(users).columns(["id", "name"])
+   * db.select().from(users).columns(["id", "name"]).execute()
+   * // ^? { id: string; name: string }[]
    */
-  columns<K extends keyof InferRow<T>>(keys: K[]): SelectBuilder<T, K> {
-    return new SelectBuilder(
+  columns<K extends keyof InferRow<T>>(keys: K[]): NarrowedSelectBuilder<T, K> {
+    return new NarrowedSelectBuilder(
       this.#client,
       this.#tableName,
       this.#table,
       this.#conditions,
-      keys as K[],
+      keys,
       this.#orderByClauses,
       this.#limitValue,
       this.#offsetValue,
@@ -255,7 +275,7 @@ export class SelectBuilder<
   }
 
   /** Return a single row or null instead of an array. Adds `LIMIT 1` to the SQL. */
-  single(): SingleSelectBuilder<T, C> {
+  single(): SingleSelectBuilder<T> {
     return new SingleSelectBuilder(
       this.#client,
       this.#tableName,
@@ -269,7 +289,7 @@ export class SelectBuilder<
   }
 
   /** Return only distinct (unique) rows. */
-  distinct(): SelectBuilder<T, C> {
+  distinct(): SelectBuilder<T> {
     return new SelectBuilder(
       this.#client,
       this.#tableName,
@@ -283,16 +303,11 @@ export class SelectBuilder<
     );
   }
 
-  /**
-   * Add an ORDER BY clause. Multiple calls stack.
-   *
-   * @example
-   * db.select().from(users).orderBy("name", "desc")
-   */
+  /** Add an ORDER BY clause. Multiple calls stack. */
   orderBy<K extends keyof InferRow<T>>(
     key: K,
     direction: "asc" | "desc" = "asc",
-  ): SelectBuilder<T, C> {
+  ): SelectBuilder<T> {
     const column = getCol(this.#table, key as string);
     return new SelectBuilder(
       this.#client,
@@ -308,7 +323,7 @@ export class SelectBuilder<
   }
 
   /** Limit the number of results. */
-  limit(n: number): SelectBuilder<T, C> {
+  limit(n: number): SelectBuilder<T> {
     return new SelectBuilder(
       this.#client,
       this.#tableName,
@@ -323,7 +338,7 @@ export class SelectBuilder<
   }
 
   /** Skip N rows before returning results. */
-  offset(n: number): SelectBuilder<T, C> {
+  offset(n: number): SelectBuilder<T> {
     return new SelectBuilder(
       this.#client,
       this.#tableName,
@@ -356,12 +371,14 @@ export class SelectBuilder<
     return { sql, params };
   }
 
-  execute(): Pick<InferRow<T>, C>[] {
+  /** Execute the query and return all matching rows. */
+  execute(): InferRow<T>[] {
     const { sql, params } = this.toSQL();
     try {
       const rows = this.#client.prepare(sql).all(...bind(params)) as Record<string, unknown>[];
       if (this.#selectedColumns) {
-        return rows.map((r) => decodeSelectedRow(r, this.#table, this.#selectedColumns!));
+        // SAFETY: NarrowRow<InferRow<T>, keyof InferRow<T>> is structurally InferRow<T>
+        return rows.map((r) => decodeSelectedRow(r, this.#table, this.#selectedColumns!)) as InferRow<T>[];
       }
       return rows.map((r) => decodeRow(r, this.#table));
     } catch (e) {
@@ -370,16 +387,175 @@ export class SelectBuilder<
   }
 }
 
-/** @internal Single-row SELECT builder — after `.single()` has been called. */
-export class SingleSelectBuilder<
+/**
+ * Narrowed SELECT builder — after `.columns()` has been called.
+ * Returns `NarrowRow<InferRow<T>, C>[]` from `execute()` — a clean
+ * `{ id: string; name: string }` shape, no Pick wrapper.
+ */
+export class NarrowedSelectBuilder<
   T extends AnyTable,
-  C extends keyof InferRow<T> = keyof InferRow<T>,
+  C extends keyof InferRow<T>,
 > implements Executable {
   #client: DatabaseClient;
   #tableName: string;
   #table: T;
   #conditions: Condition[];
-  #selectedColumns: C[] | null;
+  #selectedColumns: C[];
+  #orderByClauses: { column: ColumnDef<any, any>; direction: "asc" | "desc" }[];
+  #limitValue: number | null;
+  #offsetValue: number | null;
+  #distinct: boolean;
+
+  constructor(
+    client: DatabaseClient,
+    tableName: string,
+    table: T,
+    conditions: Condition[],
+    selectedColumns: C[],
+    orderByClauses: { column: ColumnDef<any, any>; direction: "asc" | "desc" }[],
+    limitValue: number | null,
+    offsetValue: number | null,
+    distinct: boolean,
+  ) {
+    this.#client = client;
+    this.#tableName = tableName;
+    this.#table = table;
+    this.#conditions = conditions;
+    this.#selectedColumns = selectedColumns;
+    this.#orderByClauses = orderByClauses;
+    this.#limitValue = limitValue;
+    this.#offsetValue = offsetValue;
+    this.#distinct = distinct;
+  }
+
+  where(condition: Condition): NarrowedSelectBuilder<T, C> {
+    return new NarrowedSelectBuilder(
+      this.#client,
+      this.#tableName,
+      this.#table,
+      [...this.#conditions, condition],
+      this.#selectedColumns,
+      this.#orderByClauses,
+      this.#limitValue,
+      this.#offsetValue,
+      this.#distinct,
+    );
+  }
+
+  distinct(): NarrowedSelectBuilder<T, C> {
+    return new NarrowedSelectBuilder(
+      this.#client,
+      this.#tableName,
+      this.#table,
+      this.#conditions,
+      this.#selectedColumns,
+      this.#orderByClauses,
+      this.#limitValue,
+      this.#offsetValue,
+      true,
+    );
+  }
+
+  single(): NarrowedSingleSelectBuilder<T, C> {
+    return new NarrowedSingleSelectBuilder(
+      this.#client,
+      this.#tableName,
+      this.#table,
+      this.#conditions,
+      this.#selectedColumns,
+      this.#orderByClauses,
+      this.#offsetValue,
+      this.#distinct,
+    );
+  }
+
+  orderBy<K extends keyof InferRow<T>>(
+    key: K,
+    direction: "asc" | "desc" = "asc",
+  ): NarrowedSelectBuilder<T, C> {
+    const column = getCol(this.#table, key as string);
+    return new NarrowedSelectBuilder(
+      this.#client,
+      this.#tableName,
+      this.#table,
+      this.#conditions,
+      this.#selectedColumns,
+      [...this.#orderByClauses, { column, direction }],
+      this.#limitValue,
+      this.#offsetValue,
+      this.#distinct,
+    );
+  }
+
+  limit(n: number): NarrowedSelectBuilder<T, C> {
+    return new NarrowedSelectBuilder(
+      this.#client,
+      this.#tableName,
+      this.#table,
+      this.#conditions,
+      this.#selectedColumns,
+      this.#orderByClauses,
+      n,
+      this.#offsetValue,
+      this.#distinct,
+    );
+  }
+
+  offset(n: number): NarrowedSelectBuilder<T, C> {
+    return new NarrowedSelectBuilder(
+      this.#client,
+      this.#tableName,
+      this.#table,
+      this.#conditions,
+      this.#selectedColumns,
+      this.#orderByClauses,
+      this.#limitValue,
+      n,
+      this.#distinct,
+    );
+  }
+
+  toSQL(): { sql: string; params: unknown[] } {
+    validateColumnOwnership(this.#conditions, [this.#table], `SELECT from "${this.#tableName}"`);
+    const cols = resolveColumns(this.#table, this.#selectedColumns as unknown as string[] | null);
+    const params: unknown[] = [];
+    const distinct = this.#distinct ? "DISTINCT " : "";
+    let sql = `SELECT ${distinct}${cols} FROM ${this.#tableName}`;
+    const where = compileConditions(this.#conditions, params);
+    if (where !== "1=1") sql += ` WHERE ${where}`;
+    if (this.#orderByClauses.length > 0) {
+      const orderClauses = this.#orderByClauses
+        .map((o) => `${o.column.name} ${o.direction.toUpperCase()}`)
+        .join(", ");
+      sql += ` ORDER BY ${orderClauses}`;
+    }
+    if (this.#limitValue !== null) sql += ` LIMIT ${this.#limitValue}`;
+    if (this.#offsetValue !== null) sql += ` OFFSET ${this.#offsetValue}`;
+    return { sql, params };
+  }
+
+  /** Execute the query and return narrowed rows. */
+  execute(): Prettify<NarrowRow<InferRow<T>, C>>[] {
+    const { sql, params } = this.toSQL();
+    try {
+      const rows = this.#client.prepare(sql).all(...bind(params)) as Record<string, unknown>[];
+      return rows.map((r) => decodeSelectedRow(r, this.#table, this.#selectedColumns));
+    } catch (e) {
+      throw new FlintQueryError(`Failed to execute query: ${sql}`, e as Error);
+    }
+  }
+}
+
+/**
+ * Single-row SELECT builder — after `.single()` on a `SelectBuilder`.
+ * Returns `InferRow<T> | null` from `execute()`.
+ */
+export class SingleSelectBuilder<T extends AnyTable> implements Executable {
+  #client: DatabaseClient;
+  #tableName: string;
+  #table: T;
+  #conditions: Condition[];
+  #selectedColumns: (keyof InferRow<T>)[] | null;
   #orderByClauses: { column: ColumnDef<any, any>; direction: "asc" | "desc" }[];
   #offsetValue: number | null;
   #distinct: boolean;
@@ -389,7 +565,7 @@ export class SingleSelectBuilder<
     tableName: string,
     table: T,
     conditions: Condition[],
-    selectedColumns: C[] | null = null,
+    selectedColumns: (keyof InferRow<T>)[] | null = null,
     orderByClauses: { column: ColumnDef<any, any>; direction: "asc" | "desc" }[] = [],
     offsetValue: number | null = null,
     distinct: boolean = false,
@@ -404,7 +580,7 @@ export class SingleSelectBuilder<
     this.#distinct = distinct;
   }
 
-  where(condition: Condition): SingleSelectBuilder<T, C> {
+  where(condition: Condition): SingleSelectBuilder<T> {
     return new SingleSelectBuilder(
       this.#client,
       this.#tableName,
@@ -420,7 +596,7 @@ export class SingleSelectBuilder<
   orderBy<K extends keyof InferRow<T>>(
     key: K,
     direction: "asc" | "desc" = "asc",
-  ): SingleSelectBuilder<T, C> {
+  ): SingleSelectBuilder<T> {
     const column = getCol(this.#table, key as string);
     return new SingleSelectBuilder(
       this.#client,
@@ -434,7 +610,7 @@ export class SingleSelectBuilder<
     );
   }
 
-  offset(n: number): SingleSelectBuilder<T, C> {
+  offset(n: number): SingleSelectBuilder<T> {
     return new SingleSelectBuilder(
       this.#client,
       this.#tableName,
@@ -467,16 +643,128 @@ export class SingleSelectBuilder<
   }
 
   /** Returns a single row or null, never throws on empty results. */
-  execute(): Pick<InferRow<T>, C> | null {
+  execute(): InferRow<T> | null {
     const { sql, params } = this.toSQL();
     try {
       const row = this.#client.prepare(sql).get(...bind(params)) as Record<string, unknown> | null;
       if (!row) return null;
       if (this.#selectedColumns) {
-        return decodeSelectedRow(row, this.#table, this.#selectedColumns);
+        // SAFETY: NarrowRow<InferRow<T>, keyof InferRow<T>> is structurally InferRow<T>
+        return decodeSelectedRow(row, this.#table, this.#selectedColumns) as InferRow<T>;
       }
-      // SAFETY: decodeRow builds from the table's own column entries
-      return decodeRow(row, this.#table) as Pick<InferRow<T>, C>;
+      return decodeRow(row, this.#table);
+    } catch (e) {
+      throw new FlintQueryError(`Failed to execute query: ${sql}`, e as Error);
+    }
+  }
+}
+
+/**
+ * Narrowed single-row SELECT builder — after `.single()` on a `NarrowedSelectBuilder`.
+ * Returns `NarrowRow<InferRow<T>, C> | null` from `execute()`.
+ */
+export class NarrowedSingleSelectBuilder<
+  T extends AnyTable,
+  C extends keyof InferRow<T>,
+> implements Executable {
+  #client: DatabaseClient;
+  #tableName: string;
+  #table: T;
+  #conditions: Condition[];
+  #selectedColumns: C[];
+  #orderByClauses: { column: ColumnDef<any, any>; direction: "asc" | "desc" }[];
+  #offsetValue: number | null;
+  #distinct: boolean;
+
+  constructor(
+    client: DatabaseClient,
+    tableName: string,
+    table: T,
+    conditions: Condition[],
+    selectedColumns: C[],
+    orderByClauses: { column: ColumnDef<any, any>; direction: "asc" | "desc" }[],
+    offsetValue: number | null,
+    distinct: boolean,
+  ) {
+    this.#client = client;
+    this.#tableName = tableName;
+    this.#table = table;
+    this.#conditions = conditions;
+    this.#selectedColumns = selectedColumns;
+    this.#orderByClauses = orderByClauses;
+    this.#offsetValue = offsetValue;
+    this.#distinct = distinct;
+  }
+
+  where(condition: Condition): NarrowedSingleSelectBuilder<T, C> {
+    return new NarrowedSingleSelectBuilder(
+      this.#client,
+      this.#tableName,
+      this.#table,
+      [...this.#conditions, condition],
+      this.#selectedColumns,
+      this.#orderByClauses,
+      this.#offsetValue,
+      this.#distinct,
+    );
+  }
+
+  orderBy<K extends keyof InferRow<T>>(
+    key: K,
+    direction: "asc" | "desc" = "asc",
+  ): NarrowedSingleSelectBuilder<T, C> {
+    const column = getCol(this.#table, key as string);
+    return new NarrowedSingleSelectBuilder(
+      this.#client,
+      this.#tableName,
+      this.#table,
+      this.#conditions,
+      this.#selectedColumns,
+      [...this.#orderByClauses, { column, direction }],
+      this.#offsetValue,
+      this.#distinct,
+    );
+  }
+
+  offset(n: number): NarrowedSingleSelectBuilder<T, C> {
+    return new NarrowedSingleSelectBuilder(
+      this.#client,
+      this.#tableName,
+      this.#table,
+      this.#conditions,
+      this.#selectedColumns,
+      this.#orderByClauses,
+      n,
+      this.#distinct,
+    );
+  }
+
+  toSQL(): { sql: string; params: unknown[] } {
+    validateColumnOwnership(this.#conditions, [this.#table], `SELECT from "${this.#tableName}"`);
+    const cols = resolveColumns(this.#table, this.#selectedColumns as unknown as string[] | null);
+    const params: unknown[] = [];
+    const distinct = this.#distinct ? "DISTINCT " : "";
+    let sql = `SELECT ${distinct}${cols} FROM ${this.#tableName}`;
+    const where = compileConditions(this.#conditions, params);
+    if (where !== "1=1") sql += ` WHERE ${where}`;
+    if (this.#orderByClauses.length > 0) {
+      const orderClauses = this.#orderByClauses
+        .map((o) => `${o.column.name} ${o.direction.toUpperCase()}`)
+        .join(", ");
+      sql += ` ORDER BY ${orderClauses}`;
+    }
+    sql += " LIMIT 1";
+    if (this.#offsetValue !== null) sql += ` OFFSET ${this.#offsetValue}`;
+    return { sql, params };
+  }
+
+  /** Returns a single narrowed row or null. */
+  execute(): Prettify<NarrowRow<InferRow<T>, C>> | null {
+    const { sql, params } = this.toSQL();
+    try {
+      const row = this.#client.prepare(sql).get(...bind(params)) as Record<string, unknown> | null;
+      if (!row) return null;
+      return decodeSelectedRow(row, this.#table, this.#selectedColumns);
     } catch (e) {
       throw new FlintQueryError(`Failed to execute query: ${sql}`, e as Error);
     }
@@ -665,7 +953,7 @@ export class JoinBuilderImpl<
       this.#orderByClauses,
       this.#limitValue,
       this.#offsetValue,
-    ) as JoinBuilder<Parent, Joined, K>;
+    ) as unknown as JoinBuilder<Parent, Joined, K>;
   }
 
   orderBy<K extends keyof InferRow<Parent>>(
@@ -861,7 +1149,7 @@ export type JoinResult<
   Parent extends AnyTable,
   Joined extends AnyTable[],
   ParentCols extends keyof InferRow<Parent> = keyof InferRow<Parent>,
-> = Pick<InferRow<Parent>, ParentCols> & Record<string, unknown>;
+> = Prettify<Pick<InferRow<Parent>, ParentCols>> & Record<string, unknown>;
 
 /** @internal Single-row join builder implementation. */
 export class SingleJoinBuilderImpl<

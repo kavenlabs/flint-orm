@@ -86,16 +86,28 @@ export function table<T extends Record<string, ColumnDef<any, any>>>(
   }) as TableDef<T>;
 }
 
-/** Derive the row type from a table definition, mapping column defs to their TypeScript types. */
-export type InferRow<T extends TableDef<any>> = {
-  [K in keyof Omit<T, "_">]: T[K] extends DateColumnDefWithDefault
-    ? Date
-    : T[K] extends DateColumnDef
-      ? Date | null
-      : T[K] extends ColumnDef<any, any>
-        ? T[K]["__internal"]["_type"]
-        : never;
-};
+/**
+ * Derive the row shape from a table's column definitions.
+ * DateColumnDef → Date | null (nullable unless defaultNow() was called)
+ * DateColumnDefWithDefault → Date (non-nullable, has a guaranteed default)
+ * All other columns → their _type as-is.
+ *
+ * Uses `infer C` to extract the column record from TableDef<T> so TypeScript
+ * evaluates the mapped type against the concrete columns, not the intersection.
+ * This produces cleaner hover info: { id: string; name: string } instead of
+ * Pick<InferRow<TableDef<{...}>>, ...>.
+ */
+export type InferRow<T extends TableDef<any>> = T extends TableDef<infer C>
+  ? {
+      [K in keyof Omit<C, "_">]: C[K] extends DateColumnDefWithDefault
+        ? Date
+        : C[K] extends DateColumnDef
+          ? Date | null
+          : C[K] extends ColumnDef<any, any>
+            ? C[K]["__internal"]["_type"]
+            : never;
+    }
+  : never;
 
 /** @internal Check if a column has an auto-generated default. */
 type HasAutoDefault<C> = C extends DateColumnDef
