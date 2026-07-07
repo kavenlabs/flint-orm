@@ -49,10 +49,13 @@ function randomWords(): string {
   return `${adj}_${noun}`;
 }
 
-function generateFolderName(migrationName: string): string {
+function generateFolderName(migrationName?: string): string {
   const timestamp = Math.floor(Date.now() / 1000);
   const words = randomWords();
-  return `${timestamp}_${words}_${migrationName}`;
+  if (migrationName) {
+    return `${timestamp}_${words}_${migrationName}`;
+  }
+  return `${timestamp}_${words}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -64,7 +67,7 @@ function findLatestState(migrationsDir: string): SchemaState | null {
 
   const entries = readdirSync(migrationsDir);
 
-  // Find folders matching the pattern timestamp_words_name
+  // Find folders matching the pattern timestamp_words_name or timestamp_words
   const migrationFolders = entries
     .filter((e) => /^\d{10}_/.test(e))
     .sort()

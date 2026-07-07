@@ -88,7 +88,7 @@ async function cmdGenerate(
   args: ReturnType<typeof parseArgs>["values"],
   config: FlintConfig,
 ): Promise<void> {
-  const name = typeof args.name === "string" ? args.name : "schema_change";
+  const name = typeof args.name === "string" ? args.name : undefined;
   const preview = args.preview === true;
 
   console.log(`🔍 Discovering schema from: ${config.schema}`);
@@ -135,7 +135,8 @@ async function cmdGenerate(
     }
 
     const sql = generateSQL(operations);
-    console.log(`\n--- Preview: ${name} ---`);
+    const previewLabel = name ? `${name}` : "unnamed";
+    console.log(`\n--- Preview: ${previewLabel} ---`);
     console.log(`   Operations: ${operations.length}`);
     console.log(`   Migrations dir: ${config.migrations}`);
     console.log(`\n--- SQL ---\n${sql}\n`);
