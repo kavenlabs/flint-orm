@@ -2,6 +2,9 @@
   "name": "flint-orm",
   "version": "0.1.0",
   "main": "./dist/index.js",
+  "bin": {
+    "flint": "./src/cli.ts"
+  },
   "devDependencies": {
     "@types/bun": "1.3.14",
     "oxfmt": "0.57.0",
@@ -22,6 +25,10 @@
     "./expressions": {
       "import": "./dist/entries/expressions.js",
       "types": "./dist/entries/expressions.d.ts"
+    },
+    "./config": {
+      "import": "./dist/entries/config.js",
+      "types": "./dist/entries/config.d.ts"
     }
   },
   "files": [
@@ -30,7 +37,7 @@
     "README.md"
   ],
   "scripts": {
-    "build": "bun build ./src/index.ts ./src/entries/table.ts ./src/entries/expressions.ts --outdir ./dist --target bun && tsc --project tsconfig.build.json",
+    "build": "bun build ./src/index.ts ./src/entries/table.ts ./src/entries/expressions.ts ./src/entries/config.ts --outdir ./dist --target bun && tsc --project tsconfig.build.json",
     "typecheck": "tsc --noEmit",
     "lint": "oxlint",
     "format": "oxfmt"
