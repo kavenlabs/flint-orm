@@ -14,7 +14,7 @@ import { pathToFileURL } from "node:url";
 
 interface FlintConfig {
   schema: string;
-  migrations: string;
+  migrations?: string;
 }
 
 async function loadConfig(): Promise<FlintConfig> {
@@ -112,7 +112,7 @@ async function cmdGenerate(
 
     // Find latest state
     const { existsSync, readFileSync, readdirSync } = await import("node:fs");
-    const migrationsDir = resolve(process.cwd(), config.migrations);
+    const migrationsDir = resolve(process.cwd(), config.migrations ?? "./flint");
     let previousState: ReturnType<typeof emptyState> = null as any;
     if (existsSync(migrationsDir)) {
       const folders = readdirSync(migrationsDir).filter((e) => /^\d{3}_/.test(e)).sort().reverse();
@@ -148,7 +148,7 @@ async function cmdGenerate(
   const { generate } = await import("./migration/generate.js");
 
   try {
-    const result = generate(tables as any[], resolve(process.cwd(), config.migrations), name);
+    const result = generate(tables as any[], resolve(process.cwd(), (config.migrations ?? "./flint") as string), name);
     console.log(`\n✅ Migration generated: ${result.folderName}`);
     console.log(`   Operations: ${result.operations.length}`);
     console.log(`\n--- SQL Preview ---\n${result.sql}`);

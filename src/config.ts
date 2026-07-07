@@ -6,8 +6,8 @@ export interface FlintConfig {
   /** Path to schema folder or file containing table() exports. */
   schema: string;
 
-  /** Path to the migrations directory. Defaults to "./migrations". */
-  migrations: string;
+  /** Path to the migrations directory. Defaults to "./flint". */
+  migrations?: string;
 }
 
 /**
@@ -18,7 +18,6 @@ export interface FlintConfig {
  *
  * export default defineConfig({
  *   schema: "./src/schema",
- *   migrations: "./migrations",
  * });
  */
 export function defineConfig(config: FlintConfig): FlintConfig {
