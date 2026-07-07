@@ -30,5 +30,6 @@
   },
   "peerDependencies": {
     "typescript": "7.0.1-rc"
-  }
+  },
+  "version": "0.1.0"
 }
