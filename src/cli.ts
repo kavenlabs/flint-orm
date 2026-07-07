@@ -148,7 +148,7 @@ async function cmdGenerate(
   const { generate } = await import("./migration/generate.js");
 
   try {
-    const result = generate(tables as any[], resolve(process.cwd(), config.migrations), name);
+    const result = generate(tables as any[], resolve(process.cwd(), config.migrations), name ?? "schema_change");
     console.log(`\n✅ Migration generated: ${result.folderName}`);
     console.log(`   Operations: ${result.operations.length}`);
     console.log(`\n--- SQL Preview ---\n${result.sql}`);
