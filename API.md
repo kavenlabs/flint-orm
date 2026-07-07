@@ -493,27 +493,30 @@ All queries succeed or all roll back.
 
 ## Raw SQL
 
-Execute raw SQL directly.
+Access the underlying `bun:sqlite` client directly for raw queries.
 
 ```ts
-db.raw('SELECT * FROM users WHERE id = ?', ['u1']);
-// Returns: Record<string, unknown>[]
+// Simple query
+const users = db.$client.prepare('SELECT * FROM users WHERE id = ?').all('u1');
 
-db.raw<{ count: number }>('SELECT count(*) as cnt FROM users');
-// Returns: { count: number }[]
+// With type annotation
+const rows = db.$client.prepare('SELECT count(*) as cnt FROM users').all() as { cnt: number }[];
 ```
 
 ---
 
 ## Tagged Template SQL
 
-Build parameterized SQL expressions.
+Build parameterized SQL expressions with automatic placeholder handling.
 
 ```ts
 import { sql } from 'flint-orm';
 
-const expr = sql`upper(${users.name})`;
-// { sql: "upper(?)", params: ["name_value"] }
+const expr = sql`SELECT * FROM users WHERE name = ${'Alice'} AND age > ${18}`;
+// { sql: "SELECT * FROM users WHERE name = ? AND age > ?", params: ["Alice", 18] }
+
+// Execute with db.$client
+const rows = db.$client.prepare(expr.sql).all(...expr.params);
 ```
 
 ---

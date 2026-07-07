@@ -668,22 +668,22 @@ console.log(
 
 console.log();
 
-// ── FEATURE 12: db.raw ────────────────────────────────────────────────────
+// ── FEATURE 12: Raw SQL via db.$client ──────────────────────────────────────
 
-console.log('── db.raw ──');
+console.log('── raw SQL via db.$client ──');
 
 // Raw query with params
-const rawResult = db.raw<{ id: string; name: string }>('SELECT id, name FROM users WHERE id = ?', ['u10']);
+const rawResult = db.$client.prepare('SELECT id, name FROM users WHERE id = ?').all('u10') as { id: string; name: string }[];
 console.log('raw query:', rawResult);
 // Should be: [{ id: "u10", name: "UpdatedUser" }]
 
 // Raw aggregate
-const rawCount = db.raw<{ cnt: number }>('SELECT count(*) as cnt FROM users');
+const rawCount = db.$client.prepare('SELECT count(*) as cnt FROM users').all() as { cnt: number }[];
 console.log('raw count:', rawCount[0]?.cnt);
 // Should be: number of users
 
 // Raw with no params
-const rawAll = db.raw<{ id: string }>('SELECT id FROM users ORDER BY id');
+const rawAll = db.$client.prepare('SELECT id FROM users ORDER BY id').all() as { id: string }[];
 console.log(
   'raw all ids:',
   rawAll.map((r) => r.id),

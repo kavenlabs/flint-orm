@@ -145,16 +145,6 @@ export function flint(details: ConnectionDetails) {
      */
     max: <T extends AnyTable, C extends ColumnDef<any, any>>(table: T, column: C, condition?: Condition) => max(client, table, column, condition),
 
-    /**
-     * Execute raw SQL directly and return all matching rows.
-     *
-     * @example
-     * db.raw("SELECT * FROM users WHERE id = ?", ["u1"])
-     */
-    raw: <T = Record<string, unknown>>(query: string, params?: unknown[]): T[] => {
-      return client.prepare(query).all(...((params ?? []) as SQLQueryBindings[])) as T[];
-    },
-
     /** Direct access to the underlying `bun:sqlite` client. */
     $client: client,
   };
