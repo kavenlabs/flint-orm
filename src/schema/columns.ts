@@ -49,7 +49,7 @@ export interface ColumnDef<T, S extends string = string> {
 }
 
 /** An integer column definition with auto-increment support. */
-export interface IntegerColumnDef<S extends string = "integer"> extends ColumnDef<number, S> {
+export interface IntegerColumnDef<S extends string = 'integer'> extends ColumnDef<number, S> {
   primaryKey(): IntegerColumnDef<S>;
   notNull(): IntegerColumnDef<S>;
   unique(): IntegerColumnDef<S>;
@@ -65,7 +65,7 @@ export interface IntegerColumnDef<S extends string = "integer"> extends ColumnDe
 }
 
 /** A date column that stores a unix timestamp (milliseconds) in SQLite. Nullable in results unless `.defaultNow()` is called. */
-export interface DateColumnDef extends ColumnDef<Date, "integer"> {
+export interface DateColumnDef extends ColumnDef<Date, 'integer'> {
   primaryKey(): DateColumnDef;
   notNull(): DateColumnDef;
   unique(): DateColumnDef;
@@ -150,7 +150,14 @@ function makeColumn<T, S extends string>(config: {
       return { ...this, __internal: { ...this.__internal, hasDefault: true, defaultFn: fn } };
     },
     references(target: ColumnDef<any, any>) {
-      return { ...this, __internal: { ...this.__internal, referencesTable: target.__internal.tableName, referencesColumn: target.name } };
+      return {
+        ...this,
+        __internal: {
+          ...this.__internal,
+          referencesTable: target.__internal.tableName,
+          referencesColumn: target.name,
+        },
+      };
     },
   };
 
@@ -164,10 +171,10 @@ function makeColumn<T, S extends string>(config: {
  * @example
  * const name = text("name").notNull();
  */
-export function text(name?: string): ColumnDef<string, "text"> {
+export function text(name?: string): ColumnDef<string, 'text'> {
   return makeColumn({
-    name: name ?? "",
-    sqlType: "text",
+    name: name ?? '',
+    sqlType: 'text',
     encode: (v) => v,
     decode: (v) => (v == null ? nullCast<string>() : (v as string)),
   });
@@ -179,33 +186,51 @@ export function text(name?: string): ColumnDef<string, "text"> {
  * @example
  * const id = integer("id").primaryKey().autoIncrement();
  */
-export function integer(name?: string): IntegerColumnDef<"integer"> {
-  const base = makeColumn<number, "integer">({
-    name: name ?? "",
-    sqlType: "integer",
+export function integer(name?: string): IntegerColumnDef<'integer'> {
+  const base = makeColumn<number, 'integer'>({
+    name: name ?? '',
+    sqlType: 'integer',
     encode: (v) => v,
     decode: (v) => (v == null ? nullCast<number>() : Number(v)),
   });
 
-  const intCol: IntegerColumnDef<"integer"> = {
+  const intCol: IntegerColumnDef<'integer'> = {
     ...base,
     primaryKey() {
-      return { ...this, __internal: { ...this.__internal, isPrimaryKey: true } } as IntegerColumnDef<"integer">;
+      return {
+        ...this,
+        __internal: { ...this.__internal, isPrimaryKey: true },
+      } as IntegerColumnDef<'integer'>;
     },
     notNull() {
-      return { ...this, __internal: { ...this.__internal, isNotNull: true } } as IntegerColumnDef<"integer">;
+      return {
+        ...this,
+        __internal: { ...this.__internal, isNotNull: true },
+      } as IntegerColumnDef<'integer'>;
     },
     unique() {
-      return { ...this, __internal: { ...this.__internal, isUnique: true } } as IntegerColumnDef<"integer">;
+      return {
+        ...this,
+        __internal: { ...this.__internal, isUnique: true },
+      } as IntegerColumnDef<'integer'>;
     },
     default(value: number) {
-      return { ...this, __internal: { ...this.__internal, hasDefault: true, defaultValue: value } } as IntegerColumnDef<"integer">;
+      return {
+        ...this,
+        __internal: { ...this.__internal, hasDefault: true, defaultValue: value },
+      } as IntegerColumnDef<'integer'>;
     },
     defaultFn(fn: () => number) {
-      return { ...this, __internal: { ...this.__internal, hasDefault: true, defaultFn: fn } } as IntegerColumnDef<"integer">;
+      return {
+        ...this,
+        __internal: { ...this.__internal, hasDefault: true, defaultFn: fn },
+      } as IntegerColumnDef<'integer'>;
     },
     autoIncrement() {
-      return { ...this, __internal: { ...this.__internal, isAutoIncrement: true } } as IntegerColumnDef<"integer">;
+      return {
+        ...this,
+        __internal: { ...this.__internal, isAutoIncrement: true },
+      } as IntegerColumnDef<'integer'>;
     },
   };
 
@@ -218,10 +243,10 @@ export function integer(name?: string): IntegerColumnDef<"integer"> {
  * @example
  * const active = boolean("active").notNull().default(true);
  */
-export function boolean(name?: string): ColumnDef<boolean, "integer"> {
+export function boolean(name?: string): ColumnDef<boolean, 'integer'> {
   return makeColumn({
-    name: name ?? "",
-    sqlType: "integer",
+    name: name ?? '',
+    sqlType: 'integer',
     encode: (v) => (v ? 1 : 0),
     decode: (v) => (v == null ? nullCast<boolean>() : Boolean(v)),
   });
@@ -233,13 +258,12 @@ export function boolean(name?: string): ColumnDef<boolean, "integer"> {
  * @example
  * const meta = json<Record<string, unknown>>("meta").default({});
  */
-export function json<T>(name?: string): ColumnDef<T, "text"> {
+export function json<T>(name?: string): ColumnDef<T, 'text'> {
   return makeColumn({
-    name: name ?? "",
-    sqlType: "text",
+    name: name ?? '',
+    sqlType: 'text',
     encode: (v) => (v == null ? null : JSON.stringify(v)),
-    decode: (v) =>
-      v == null ? nullCast<T>() : (JSON.parse(v as string) as T),
+    decode: (v) => (v == null ? nullCast<T>() : (JSON.parse(v as string) as T)),
   });
 }
 
@@ -250,9 +274,9 @@ export function json<T>(name?: string): ColumnDef<T, "text"> {
  * const createdAt = date("created_at").defaultNow().notNull();
  */
 export function date(name?: string): DateColumnDef {
-  const base = makeColumn<Date, "integer">({
-    name: name ?? "",
-    sqlType: "integer",
+  const base = makeColumn<Date, 'integer'>({
+    name: name ?? '',
+    sqlType: 'integer',
     encode: (v) => (v == null ? null : v.getTime()),
     decode: (v) => (v == null ? nullCast<Date>() : new Date(v as number)),
   });
@@ -291,10 +315,10 @@ export function date(name?: string): DateColumnDef {
  * @example
  * const price = real("price").notNull();
  */
-export function real(name?: string): ColumnDef<number, "real"> {
+export function real(name?: string): ColumnDef<number, 'real'> {
   return makeColumn({
-    name: name ?? "",
-    sqlType: "real",
+    name: name ?? '',
+    sqlType: 'real',
     encode: (v) => v,
     decode: (v) => (v == null ? nullCast<number>() : Number(v)),
   });

@@ -1,10 +1,10 @@
 // Query builders
-import type { SQLQueryBindings } from "bun:sqlite";
-import type { ColumnDef } from "../schema/columns";
-import type { Condition } from "./conditions";
-import { compileConditions, eq } from "./conditions";
-import type { TableDef, AnyTable, InferRow, InsertRow } from "../schema/table";
-import { FlintValidationError, FlintQueryError } from "../errors";
+import type { SQLQueryBindings } from 'bun:sqlite';
+import type { ColumnDef } from '../schema/columns';
+import type { Condition } from './conditions';
+import { compileConditions, eq } from './conditions';
+import type { TableDef, AnyTable, InferRow, InsertRow } from '../schema/table';
+import { FlintValidationError, FlintQueryError } from '../errors';
 
 // -----------------------------------------------------------------------
 // Type helpers
@@ -38,7 +38,7 @@ function getCol(tbl: AnyTable, key: string): ColumnDef<any, any> {
 
 /** @internal Get column entries from a table (filters out `._`). */
 function columnEntries(tbl: AnyTable): [string, ColumnDef<any, any>][] {
-  return Object.entries(tbl).filter(([k]) => k !== "_") as [string, ColumnDef<any, any>][];
+  return Object.entries(tbl).filter(([k]) => k !== '_') as [string, ColumnDef<any, any>][];
 }
 
 /** @internal Decode a raw SQLite row into the full logical TS shape. */
@@ -71,21 +71,13 @@ function findPKKey(tbl: AnyTable): string {
   for (const [key, col] of columnEntries(tbl)) {
     if (col.__internal.isPrimaryKey) return key;
   }
-  throw new FlintValidationError("Table has no primary key column");
+  throw new FlintValidationError('Table has no primary key column');
 }
 
 /** @internal Resolve a join condition from foreign key references. */
-function resolveForeignKeyCondition(
-  parent: AnyTable,
-  parentName: string,
-  child: AnyTable,
-  childName: string,
-): Condition {
+function resolveForeignKeyCondition(parent: AnyTable, parentName: string, child: AnyTable, childName: string): Condition {
   for (const [, col] of columnEntries(child)) {
-    if (
-      col.__internal.referencesTable === parentName &&
-      col.__internal.referencesColumn
-    ) {
+    if (col.__internal.referencesTable === parentName && col.__internal.referencesColumn) {
       // Find the parent column that matches the referenced column name
       const parentCol = getCol(parent, col.__internal.referencesColumn);
       if (parentCol) {
@@ -94,27 +86,27 @@ function resolveForeignKeyCondition(
     }
   }
   throw new FlintValidationError(
-    `No foreign key reference found from "${childName}" to "${parentName}". Use .references() on the child table or provide an explicit condition.`
+    `No foreign key reference found from "${childName}" to "${parentName}". Use .references() on the child table or provide an explicit condition.`,
   );
 }
 
 /** @internal Extract all column references from a condition tree. */
 function extractColumns(cond: Condition): ColumnDef<any, any>[] {
   switch (cond.type) {
-    case "eq":
+    case 'eq':
       return [cond.column];
-    case "eqColumn":
+    case 'eqColumn':
       return [cond.left, cond.right];
-    case "in":
-    case "notIn":
-    case "isNull":
-    case "isNotNull":
-    case "like":
-    case "glob":
-    case "between":
+    case 'in':
+    case 'notIn':
+    case 'isNull':
+    case 'isNotNull':
+    case 'like':
+    case 'glob':
+    case 'between':
       return [cond.column];
-    case "and":
-    case "or":
+    case 'and':
+    case 'or':
       return cond.conditions.flatMap(extractColumns);
     default:
       return [];
@@ -122,21 +114,14 @@ function extractColumns(cond: Condition): ColumnDef<any, any>[] {
 }
 
 /** @internal Validate that all columns in conditions belong to the allowed tables. */
-function validateColumnOwnership(
-  conditions: Condition[],
-  allowedTables: AnyTable[],
-  context: string,
-): void {
-  const allowedColumns = new Set(
-    allowedTables.flatMap((t) => columnEntries(t).map(([, c]) => c)),
-  );
+function validateColumnOwnership(conditions: Condition[], allowedTables: AnyTable[], context: string): void {
+  const allowedColumns = new Set(allowedTables.flatMap((t) => columnEntries(t).map(([, c]) => c)));
   for (const cond of conditions) {
     const cols = extractColumns(cond);
     for (const col of cols) {
       if (!allowedColumns.has(col)) {
         throw new FlintValidationError(
-          `Column "${col.name}" does not belong to ${context}. ` +
-          `Check that you're using a column from the queried table, not a different table.`
+          `Column "${col.name}" does not belong to ${context}. ` + `Check that you're using a column from the queried table, not a different table.`,
         );
       }
     }
@@ -144,21 +129,17 @@ function validateColumnOwnership(
 }
 
 /** @internal Resolve column list SQL from selected columns or all entries. */
-function resolveColumns<T extends AnyTable>(
-  table: T,
-  selectedColumns: string[] | null,
-  prefix?: string,
-): string {
+function resolveColumns<T extends AnyTable>(table: T, selectedColumns: string[] | null, prefix?: string): string {
   if (selectedColumns) {
     return selectedColumns
       .map((k) => {
         const name = getCol(table, k).name;
         return prefix ? `${prefix}.${name}` : name;
       })
-      .join(", ");
+      .join(', ');
   }
   const entries = columnEntries(table);
-  return entries.map(([, c]) => (prefix ? `${prefix}.${c.name}` : c.name)).join(", ");
+  return entries.map(([, c]) => (prefix ? `${prefix}.${c.name}` : c.name)).join(', ');
 }
 
 /** Anything that can produce SQL — used by `db.batch()`. */
@@ -176,7 +157,7 @@ export interface DatabaseClient {
 }
 
 /** @internal */
-type JoinType = "left" | "inner";
+type JoinType = 'left' | 'inner';
 
 // SELECT builders
 /** Phase 1 of a SELECT — only `.from()` is available. */
@@ -210,7 +191,7 @@ export class SelectBuilder<T extends AnyTable> implements Executable {
   #table: T;
   #conditions: Condition[];
   #selectedColumns: (keyof InferRow<T>)[] | null;
-  #orderByClauses: { column: ColumnDef<any, any>; direction: "asc" | "desc" }[];
+  #orderByClauses: { column: ColumnDef<any, any>; direction: 'asc' | 'desc' }[];
   #limitValue: number | null;
   #offsetValue: number | null;
   #distinct: boolean;
@@ -221,7 +202,7 @@ export class SelectBuilder<T extends AnyTable> implements Executable {
     table: T,
     conditions: Condition[] = [],
     selectedColumns: (keyof InferRow<T>)[] | null = null,
-    orderByClauses: { column: ColumnDef<any, any>; direction: "asc" | "desc" }[] = [],
+    orderByClauses: { column: ColumnDef<any, any>; direction: 'asc' | 'desc' }[] = [],
     limitValue: number | null = null,
     offsetValue: number | null = null,
     distinct: boolean = false,
@@ -304,10 +285,7 @@ export class SelectBuilder<T extends AnyTable> implements Executable {
   }
 
   /** Add an ORDER BY clause. Multiple calls stack. */
-  orderBy<K extends keyof InferRow<T>>(
-    key: K,
-    direction: "asc" | "desc" = "asc",
-  ): SelectBuilder<T> {
+  orderBy<K extends keyof InferRow<T>>(key: K, direction: 'asc' | 'desc' = 'asc'): SelectBuilder<T> {
     const column = getCol(this.#table, key as string);
     return new SelectBuilder(
       this.#client,
@@ -356,14 +334,12 @@ export class SelectBuilder<T extends AnyTable> implements Executable {
     validateColumnOwnership(this.#conditions, [this.#table], `SELECT from "${this.#tableName}"`);
     const cols = resolveColumns(this.#table, this.#selectedColumns as unknown as string[] | null);
     const params: unknown[] = [];
-    const distinct = this.#distinct ? "DISTINCT " : "";
+    const distinct = this.#distinct ? 'DISTINCT ' : '';
     let sql = `SELECT ${distinct}${cols} FROM ${this.#tableName}`;
     const where = compileConditions(this.#conditions, params);
-    if (where !== "1=1") sql += ` WHERE ${where}`;
+    if (where !== '1=1') sql += ` WHERE ${where}`;
     if (this.#orderByClauses.length > 0) {
-      const orderClauses = this.#orderByClauses
-        .map((o) => `${o.column.name} ${o.direction.toUpperCase()}`)
-        .join(", ");
+      const orderClauses = this.#orderByClauses.map((o) => `${o.column.name} ${o.direction.toUpperCase()}`).join(', ');
       sql += ` ORDER BY ${orderClauses}`;
     }
     if (this.#limitValue !== null) sql += ` LIMIT ${this.#limitValue}`;
@@ -392,16 +368,13 @@ export class SelectBuilder<T extends AnyTable> implements Executable {
  * Returns `NarrowRow<InferRow<T>, C>[]` from `execute()` — a clean
  * `{ id: string; name: string }` shape, no Pick wrapper.
  */
-export class NarrowedSelectBuilder<
-  T extends AnyTable,
-  C extends keyof InferRow<T>,
-> implements Executable {
+export class NarrowedSelectBuilder<T extends AnyTable, C extends keyof InferRow<T>> implements Executable {
   #client: DatabaseClient;
   #tableName: string;
   #table: T;
   #conditions: Condition[];
   #selectedColumns: C[];
-  #orderByClauses: { column: ColumnDef<any, any>; direction: "asc" | "desc" }[];
+  #orderByClauses: { column: ColumnDef<any, any>; direction: 'asc' | 'desc' }[];
   #limitValue: number | null;
   #offsetValue: number | null;
   #distinct: boolean;
@@ -412,7 +385,7 @@ export class NarrowedSelectBuilder<
     table: T,
     conditions: Condition[],
     selectedColumns: C[],
-    orderByClauses: { column: ColumnDef<any, any>; direction: "asc" | "desc" }[],
+    orderByClauses: { column: ColumnDef<any, any>; direction: 'asc' | 'desc' }[],
     limitValue: number | null,
     offsetValue: number | null,
     distinct: boolean,
@@ -469,10 +442,7 @@ export class NarrowedSelectBuilder<
     );
   }
 
-  orderBy<K extends keyof InferRow<T>>(
-    key: K,
-    direction: "asc" | "desc" = "asc",
-  ): NarrowedSelectBuilder<T, C> {
+  orderBy<K extends keyof InferRow<T>>(key: K, direction: 'asc' | 'desc' = 'asc'): NarrowedSelectBuilder<T, C> {
     const column = getCol(this.#table, key as string);
     return new NarrowedSelectBuilder(
       this.#client,
@@ -519,14 +489,12 @@ export class NarrowedSelectBuilder<
     validateColumnOwnership(this.#conditions, [this.#table], `SELECT from "${this.#tableName}"`);
     const cols = resolveColumns(this.#table, this.#selectedColumns as unknown as string[] | null);
     const params: unknown[] = [];
-    const distinct = this.#distinct ? "DISTINCT " : "";
+    const distinct = this.#distinct ? 'DISTINCT ' : '';
     let sql = `SELECT ${distinct}${cols} FROM ${this.#tableName}`;
     const where = compileConditions(this.#conditions, params);
-    if (where !== "1=1") sql += ` WHERE ${where}`;
+    if (where !== '1=1') sql += ` WHERE ${where}`;
     if (this.#orderByClauses.length > 0) {
-      const orderClauses = this.#orderByClauses
-        .map((o) => `${o.column.name} ${o.direction.toUpperCase()}`)
-        .join(", ");
+      const orderClauses = this.#orderByClauses.map((o) => `${o.column.name} ${o.direction.toUpperCase()}`).join(', ');
       sql += ` ORDER BY ${orderClauses}`;
     }
     if (this.#limitValue !== null) sql += ` LIMIT ${this.#limitValue}`;
@@ -556,7 +524,7 @@ export class SingleSelectBuilder<T extends AnyTable> implements Executable {
   #table: T;
   #conditions: Condition[];
   #selectedColumns: (keyof InferRow<T>)[] | null;
-  #orderByClauses: { column: ColumnDef<any, any>; direction: "asc" | "desc" }[];
+  #orderByClauses: { column: ColumnDef<any, any>; direction: 'asc' | 'desc' }[];
   #offsetValue: number | null;
   #distinct: boolean;
 
@@ -566,7 +534,7 @@ export class SingleSelectBuilder<T extends AnyTable> implements Executable {
     table: T,
     conditions: Condition[],
     selectedColumns: (keyof InferRow<T>)[] | null = null,
-    orderByClauses: { column: ColumnDef<any, any>; direction: "asc" | "desc" }[] = [],
+    orderByClauses: { column: ColumnDef<any, any>; direction: 'asc' | 'desc' }[] = [],
     offsetValue: number | null = null,
     distinct: boolean = false,
   ) {
@@ -593,10 +561,7 @@ export class SingleSelectBuilder<T extends AnyTable> implements Executable {
     );
   }
 
-  orderBy<K extends keyof InferRow<T>>(
-    key: K,
-    direction: "asc" | "desc" = "asc",
-  ): SingleSelectBuilder<T> {
+  orderBy<K extends keyof InferRow<T>>(key: K, direction: 'asc' | 'desc' = 'asc'): SingleSelectBuilder<T> {
     const column = getCol(this.#table, key as string);
     return new SingleSelectBuilder(
       this.#client,
@@ -627,17 +592,15 @@ export class SingleSelectBuilder<T extends AnyTable> implements Executable {
     validateColumnOwnership(this.#conditions, [this.#table], `SELECT from "${this.#tableName}"`);
     const cols = resolveColumns(this.#table, this.#selectedColumns as unknown as string[] | null);
     const params: unknown[] = [];
-    const distinct = this.#distinct ? "DISTINCT " : "";
+    const distinct = this.#distinct ? 'DISTINCT ' : '';
     let sql = `SELECT ${distinct}${cols} FROM ${this.#tableName}`;
     const where = compileConditions(this.#conditions, params);
-    if (where !== "1=1") sql += ` WHERE ${where}`;
+    if (where !== '1=1') sql += ` WHERE ${where}`;
     if (this.#orderByClauses.length > 0) {
-      const orderClauses = this.#orderByClauses
-        .map((o) => `${o.column.name} ${o.direction.toUpperCase()}`)
-        .join(", ");
+      const orderClauses = this.#orderByClauses.map((o) => `${o.column.name} ${o.direction.toUpperCase()}`).join(', ');
       sql += ` ORDER BY ${orderClauses}`;
     }
-    sql += " LIMIT 1";
+    sql += ' LIMIT 1';
     if (this.#offsetValue !== null) sql += ` OFFSET ${this.#offsetValue}`;
     return { sql, params };
   }
@@ -663,16 +626,13 @@ export class SingleSelectBuilder<T extends AnyTable> implements Executable {
  * Narrowed single-row SELECT builder — after `.single()` on a `NarrowedSelectBuilder`.
  * Returns `NarrowRow<InferRow<T>, C> | null` from `execute()`.
  */
-export class NarrowedSingleSelectBuilder<
-  T extends AnyTable,
-  C extends keyof InferRow<T>,
-> implements Executable {
+export class NarrowedSingleSelectBuilder<T extends AnyTable, C extends keyof InferRow<T>> implements Executable {
   #client: DatabaseClient;
   #tableName: string;
   #table: T;
   #conditions: Condition[];
   #selectedColumns: C[];
-  #orderByClauses: { column: ColumnDef<any, any>; direction: "asc" | "desc" }[];
+  #orderByClauses: { column: ColumnDef<any, any>; direction: 'asc' | 'desc' }[];
   #offsetValue: number | null;
   #distinct: boolean;
 
@@ -682,7 +642,7 @@ export class NarrowedSingleSelectBuilder<
     table: T,
     conditions: Condition[],
     selectedColumns: C[],
-    orderByClauses: { column: ColumnDef<any, any>; direction: "asc" | "desc" }[],
+    orderByClauses: { column: ColumnDef<any, any>; direction: 'asc' | 'desc' }[],
     offsetValue: number | null,
     distinct: boolean,
   ) {
@@ -709,10 +669,7 @@ export class NarrowedSingleSelectBuilder<
     );
   }
 
-  orderBy<K extends keyof InferRow<T>>(
-    key: K,
-    direction: "asc" | "desc" = "asc",
-  ): NarrowedSingleSelectBuilder<T, C> {
+  orderBy<K extends keyof InferRow<T>>(key: K, direction: 'asc' | 'desc' = 'asc'): NarrowedSingleSelectBuilder<T, C> {
     const column = getCol(this.#table, key as string);
     return new NarrowedSingleSelectBuilder(
       this.#client,
@@ -743,17 +700,15 @@ export class NarrowedSingleSelectBuilder<
     validateColumnOwnership(this.#conditions, [this.#table], `SELECT from "${this.#tableName}"`);
     const cols = resolveColumns(this.#table, this.#selectedColumns as unknown as string[] | null);
     const params: unknown[] = [];
-    const distinct = this.#distinct ? "DISTINCT " : "";
+    const distinct = this.#distinct ? 'DISTINCT ' : '';
     let sql = `SELECT ${distinct}${cols} FROM ${this.#tableName}`;
     const where = compileConditions(this.#conditions, params);
-    if (where !== "1=1") sql += ` WHERE ${where}`;
+    if (where !== '1=1') sql += ` WHERE ${where}`;
     if (this.#orderByClauses.length > 0) {
-      const orderClauses = this.#orderByClauses
-        .map((o) => `${o.column.name} ${o.direction.toUpperCase()}`)
-        .join(", ");
+      const orderClauses = this.#orderByClauses.map((o) => `${o.column.name} ${o.direction.toUpperCase()}`).join(', ');
       sql += ` ORDER BY ${orderClauses}`;
     }
-    sql += " LIMIT 1";
+    sql += ' LIMIT 1';
     if (this.#offsetValue !== null) sql += ` OFFSET ${this.#offsetValue}`;
     return { sql, params };
   }
@@ -787,25 +742,13 @@ export interface JoinSelectStage1<Parent extends AnyTable> {
 }
 
 /** Full join builder — chain more `.on()` calls or call `.execute()`. */
-export interface JoinBuilder<
-  Parent extends AnyTable,
-  Joined extends AnyTable[],
-  ParentCols extends keyof InferRow<Parent> = keyof InferRow<Parent>,
-> {
-  on<NewChild extends AnyTable>(
-    child: NewChild,
-    condition: Condition,
-  ): JoinBuilder<Parent, [...Joined, NewChild], ParentCols>;
+export interface JoinBuilder<Parent extends AnyTable, Joined extends AnyTable[], ParentCols extends keyof InferRow<Parent> = keyof InferRow<Parent>> {
+  on<NewChild extends AnyTable>(child: NewChild, condition: Condition): JoinBuilder<Parent, [...Joined, NewChild], ParentCols>;
   /** Auto-join: infer condition from foreign key references. */
-  on<NewChild extends AnyTable>(
-    child: NewChild,
-  ): JoinBuilder<Parent, [...Joined, NewChild], ParentCols>;
+  on<NewChild extends AnyTable>(child: NewChild): JoinBuilder<Parent, [...Joined, NewChild], ParentCols>;
   columns<K extends keyof InferRow<Parent>>(keys: K[]): JoinBuilder<Parent, Joined, K>;
   where(condition: Condition): JoinBuilder<Parent, Joined, ParentCols>;
-  orderBy<K extends keyof InferRow<Parent>>(
-    key: K,
-    direction?: "asc" | "desc",
-  ): JoinBuilder<Parent, Joined, ParentCols>;
+  orderBy<K extends keyof InferRow<Parent>>(key: K, direction?: 'asc' | 'desc'): JoinBuilder<Parent, Joined, ParentCols>;
   limit(n: number): JoinBuilder<Parent, Joined, ParentCols>;
   offset(n: number): JoinBuilder<Parent, Joined, ParentCols>;
   single(): SingleJoinBuilder<Parent, Joined, ParentCols>;
@@ -820,10 +763,7 @@ export interface SingleJoinBuilder<
   ParentCols extends keyof InferRow<Parent> = keyof InferRow<Parent>,
 > {
   where(condition: Condition): SingleJoinBuilder<Parent, Joined, ParentCols>;
-  orderBy<K extends keyof InferRow<Parent>>(
-    key: K,
-    direction?: "asc" | "desc",
-  ): SingleJoinBuilder<Parent, Joined, ParentCols>;
+  orderBy<K extends keyof InferRow<Parent>>(key: K, direction?: 'asc' | 'desc'): SingleJoinBuilder<Parent, Joined, ParentCols>;
   offset(n: number): SingleJoinBuilder<Parent, Joined, ParentCols>;
   toSQL(): { sql: string; params: unknown[] };
   execute(): JoinResult<Parent, Joined, ParentCols> | null;
@@ -849,10 +789,7 @@ export class JoinStage1<Parent extends AnyTable> implements JoinSelectStage1<Par
    * @example
    * db.leftJoin(users).on(posts, eq(posts.userId, users.id))
    */
-  on<Child extends AnyTable>(
-    child: Child,
-    condition?: Condition,
-  ): JoinBuilder<Parent, [Child]> {
+  on<Child extends AnyTable>(child: Child, condition?: Condition): JoinBuilder<Parent, [Child]> {
     const childName = child._.name;
     const resolvedCondition = condition ?? resolveForeignKeyCondition(this.#parent, this.#parentName, child, childName);
     return new JoinBuilderImpl(
@@ -878,7 +815,7 @@ export class JoinBuilderImpl<
   #joinType: JoinType;
   #conditions: Condition[];
   #selectedColumns: ParentCols[] | null;
-  #orderByClauses: { column: ColumnDef<any, any>; direction: "asc" | "desc" }[];
+  #orderByClauses: { column: ColumnDef<any, any>; direction: 'asc' | 'desc' }[];
   #limitValue: number | null;
   #offsetValue: number | null;
 
@@ -890,7 +827,7 @@ export class JoinBuilderImpl<
     joinType: JoinType,
     conditions: Condition[] = [],
     selectedColumns: ParentCols[] | null = null,
-    orderByClauses: { column: ColumnDef<any, any>; direction: "asc" | "desc" }[] = [],
+    orderByClauses: { column: ColumnDef<any, any>; direction: 'asc' | 'desc' }[] = [],
     limitValue: number | null = null,
     offsetValue: number | null = null,
   ) {
@@ -909,10 +846,7 @@ export class JoinBuilderImpl<
   /**
    * Add another join. Provide an explicit condition or auto-infer from foreign keys.
    */
-  on<NewChild extends AnyTable>(
-    child: NewChild,
-    condition?: Condition,
-  ): JoinBuilder<Parent, [...Joined, NewChild], ParentCols> {
+  on<NewChild extends AnyTable>(child: NewChild, condition?: Condition): JoinBuilder<Parent, [...Joined, NewChild], ParentCols> {
     const childName = child._.name;
     const resolvedCondition = condition ?? resolveForeignKeyCondition(this.#parent, this.#parentName, child, childName);
     // SAFETY: constructor args match the interface — TypeScript can't infer the spread tuple type
@@ -956,10 +890,7 @@ export class JoinBuilderImpl<
     ) as unknown as JoinBuilder<Parent, Joined, K>;
   }
 
-  orderBy<K extends keyof InferRow<Parent>>(
-    key: K,
-    direction: "asc" | "desc" = "asc",
-  ): JoinBuilder<Parent, Joined, ParentCols> {
+  orderBy<K extends keyof InferRow<Parent>>(key: K, direction: 'asc' | 'desc' = 'asc'): JoinBuilder<Parent, Joined, ParentCols> {
     const column = getCol(this.#parent, key as string);
     // SAFETY: constructor args match the interface
     return new JoinBuilderImpl(
@@ -1024,13 +955,9 @@ export class JoinBuilderImpl<
   }
 
   toSQL(): { sql: string; params: unknown[] } {
-    const allowedTables = [this.#parent, ...this.#joins.map(j => j.table)];
+    const allowedTables = [this.#parent, ...this.#joins.map((j) => j.table)];
     validateColumnOwnership(this.#conditions, allowedTables, `SELECT from "${this.#parentName}"`);
-    const parentCols = resolveColumns(
-      this.#parent,
-      this.#selectedColumns as unknown as string[] | null,
-      this.#parentName,
-    );
+    const parentCols = resolveColumns(this.#parent, this.#selectedColumns as unknown as string[] | null, this.#parentName);
 
     const childCols: string[] = [];
     for (const join of this.#joins) {
@@ -1040,7 +967,7 @@ export class JoinBuilderImpl<
       }
     }
 
-    const joinKeyword = this.#joinType === "left" ? "LEFT JOIN" : "INNER JOIN";
+    const joinKeyword = this.#joinType === 'left' ? 'LEFT JOIN' : 'INNER JOIN';
     const joinClauses: string[] = [];
     const joinParams: unknown[] = [];
     for (const join of this.#joins) {
@@ -1051,12 +978,10 @@ export class JoinBuilderImpl<
     const whereParams: unknown[] = [];
     const where = compileConditions(this.#conditions, whereParams);
 
-    let sql = `SELECT ${parentCols}${childCols.length ? ", " + childCols.join(", ") : ""} FROM ${this.#parentName} ${joinClauses.join(" ")}`;
-    if (where !== "1=1") sql += ` WHERE ${where}`;
+    let sql = `SELECT ${parentCols}${childCols.length ? ', ' + childCols.join(', ') : ''} FROM ${this.#parentName} ${joinClauses.join(' ')}`;
+    if (where !== '1=1') sql += ` WHERE ${where}`;
     if (this.#orderByClauses.length > 0) {
-      const orderClauses = this.#orderByClauses
-        .map((o) => `${o.column.name} ${o.direction.toUpperCase()}`)
-        .join(", ");
+      const orderClauses = this.#orderByClauses.map((o) => `${o.column.name} ${o.direction.toUpperCase()}`).join(', ');
       sql += ` ORDER BY ${orderClauses}`;
     }
     if (this.#limitValue !== null) sql += ` LIMIT ${this.#limitValue}`;
@@ -1089,10 +1014,7 @@ export class JoinBuilderImpl<
         });
       }
 
-      const grouped = new Map<
-        unknown,
-        { parent: Record<string, unknown>; children: Record<string, unknown>[][] }
-      >();
+      const grouped = new Map<unknown, { parent: Record<string, unknown>; children: Record<string, unknown>[][] }>();
 
       for (const row of rows) {
         const pk = row[pkColName];
@@ -1116,7 +1038,7 @@ export class JoinBuilderImpl<
             childRow[key] = val;
             if (val != null) hasNonNullChild = true;
           }
-          if (this.#joinType === "left" && !hasNonNullChild) return;
+          if (this.#joinType === 'left' && !hasNonNullChild) return;
           group.children[i]!.push(childRow);
         });
       }
@@ -1164,7 +1086,7 @@ export class SingleJoinBuilderImpl<
   #joinType: JoinType;
   #conditions: Condition[];
   #selectedColumns: ParentCols[] | null;
-  #orderByClauses: { column: ColumnDef<any, any>; direction: "asc" | "desc" }[];
+  #orderByClauses: { column: ColumnDef<any, any>; direction: 'asc' | 'desc' }[];
   #offsetValue: number | null;
 
   constructor(
@@ -1175,7 +1097,7 @@ export class SingleJoinBuilderImpl<
     joinType: JoinType,
     conditions: Condition[],
     selectedColumns: ParentCols[] | null = null,
-    orderByClauses: { column: ColumnDef<any, any>; direction: "asc" | "desc" }[] = [],
+    orderByClauses: { column: ColumnDef<any, any>; direction: 'asc' | 'desc' }[] = [],
     offsetValue: number | null = null,
   ) {
     this.#client = client;
@@ -1203,10 +1125,7 @@ export class SingleJoinBuilderImpl<
     );
   }
 
-  orderBy<K extends keyof InferRow<Parent>>(
-    key: K,
-    direction: "asc" | "desc" = "asc",
-  ): SingleJoinBuilderImpl<Parent, Joined, ParentCols> {
+  orderBy<K extends keyof InferRow<Parent>>(key: K, direction: 'asc' | 'desc' = 'asc'): SingleJoinBuilderImpl<Parent, Joined, ParentCols> {
     const column = getCol(this.#parent, key as string);
     return new SingleJoinBuilderImpl(
       this.#client,
@@ -1236,13 +1155,9 @@ export class SingleJoinBuilderImpl<
   }
 
   toSQL(): { sql: string; params: unknown[] } {
-    const allowedTables = [this.#parent, ...this.#joins.map(j => j.table)];
+    const allowedTables = [this.#parent, ...this.#joins.map((j) => j.table)];
     validateColumnOwnership(this.#conditions, allowedTables, `SELECT from "${this.#parentName}"`);
-    const parentCols = resolveColumns(
-      this.#parent,
-      this.#selectedColumns as unknown as string[] | null,
-      this.#parentName,
-    );
+    const parentCols = resolveColumns(this.#parent, this.#selectedColumns as unknown as string[] | null, this.#parentName);
 
     const childCols: string[] = [];
     for (const join of this.#joins) {
@@ -1252,7 +1167,7 @@ export class SingleJoinBuilderImpl<
       }
     }
 
-    const joinKeyword = this.#joinType === "left" ? "LEFT JOIN" : "INNER JOIN";
+    const joinKeyword = this.#joinType === 'left' ? 'LEFT JOIN' : 'INNER JOIN';
     const joinClauses: string[] = [];
     const joinParams: unknown[] = [];
     for (const join of this.#joins) {
@@ -1263,15 +1178,13 @@ export class SingleJoinBuilderImpl<
     const whereParams: unknown[] = [];
     const where = compileConditions(this.#conditions, whereParams);
 
-    let sql = `SELECT ${parentCols}${childCols.length ? ", " + childCols.join(", ") : ""} FROM ${this.#parentName} ${joinClauses.join(" ")}`;
-    if (where !== "1=1") sql += ` WHERE ${where}`;
+    let sql = `SELECT ${parentCols}${childCols.length ? ', ' + childCols.join(', ') : ''} FROM ${this.#parentName} ${joinClauses.join(' ')}`;
+    if (where !== '1=1') sql += ` WHERE ${where}`;
     if (this.#orderByClauses.length > 0) {
-      const orderClauses = this.#orderByClauses
-        .map((o) => `${o.column.name} ${o.direction.toUpperCase()}`)
-        .join(", ");
+      const orderClauses = this.#orderByClauses.map((o) => `${o.column.name} ${o.direction.toUpperCase()}`).join(', ');
       sql += ` ORDER BY ${orderClauses}`;
     }
-    sql += " LIMIT 1";
+    sql += ' LIMIT 1';
     if (this.#offsetValue !== null) sql += ` OFFSET ${this.#offsetValue}`;
 
     return { sql, params: [...joinParams, ...whereParams] };
@@ -1302,10 +1215,7 @@ export class SingleJoinBuilderImpl<
         });
       }
 
-      const grouped = new Map<
-        unknown,
-        { parent: Record<string, unknown>; children: Record<string, unknown>[][] }
-      >();
+      const grouped = new Map<unknown, { parent: Record<string, unknown>; children: Record<string, unknown>[][] }>();
 
       for (const r of allRows) {
         const pk = r[pkColName];
@@ -1329,7 +1239,7 @@ export class SingleJoinBuilderImpl<
             childRow[key] = val;
             if (val != null) hasNonNullChild = true;
           }
-          if (this.#joinType === "left" && !hasNonNullChild) return;
+          if (this.#joinType === 'left' && !hasNonNullChild) return;
           group.children[i]!.push(childRow);
         });
       }
@@ -1377,9 +1287,9 @@ export class InsertValuesBuilder<T extends AnyTable> implements InsertStage1<T> 
 }
 
 /** @internal ON CONFLICT strategy type. */
-type OnConflictDoNothing = { mode: "nothing" };
+type OnConflictDoNothing = { mode: 'nothing' };
 type OnConflictDoUpdate<T extends AnyTable> = {
-  mode: "update";
+  mode: 'update';
   target: ColumnDef<any, any> | ColumnDef<any, any>[];
   set: Partial<InferRow<T>>;
 };
@@ -1420,7 +1330,7 @@ export class InsertBuilder<T extends AnyTable, R extends boolean = false> implem
    * db.insert(users).values(row).onConflictDoNothing()
    */
   onConflictDoNothing(): InsertBuilder<T, R> {
-    return new InsertBuilder(this.#client, this.#tableName, this.#table, this.#row, this.#returning as R, { mode: "nothing" });
+    return new InsertBuilder(this.#client, this.#tableName, this.#table, this.#row, this.#returning as R, { mode: 'nothing' });
   }
 
   /**
@@ -1432,11 +1342,9 @@ export class InsertBuilder<T extends AnyTable, R extends boolean = false> implem
    *   set: { name: "Alice" },
    * })
    */
-  onConflictDoUpdate<C extends ColumnDef<any, any>>(
-    options: { target: C | C[]; set: Partial<InferRow<T>> },
-  ): InsertBuilder<T, R> {
+  onConflictDoUpdate<C extends ColumnDef<any, any>>(options: { target: C | C[]; set: Partial<InferRow<T>> }): InsertBuilder<T, R> {
     return new InsertBuilder(this.#client, this.#tableName, this.#table, this.#row, this.#returning as R, {
-      mode: "update",
+      mode: 'update',
       target: options.target,
       set: options.set,
     });
@@ -1467,20 +1375,17 @@ export class InsertBuilder<T extends AnyTable, R extends boolean = false> implem
 
     if (inserts.length === 0) {
       // All columns have defaults — insert with defaults only
-      const allDefault = entries.filter(
-        ([, c]) =>
-          c.__internal.hasDefault || c.__internal.isAutoIncrement || c.__internal.hasDefaultNow,
-      );
-      const names = allDefault.map(([, c]) => c.name).join(", ");
-      const placeholders = allDefault.map(() => "DEFAULT").join(", ");
+      const allDefault = entries.filter(([, c]) => c.__internal.hasDefault || c.__internal.isAutoIncrement || c.__internal.hasDefaultNow);
+      const names = allDefault.map(([, c]) => c.name).join(', ');
+      const placeholders = allDefault.map(() => 'DEFAULT').join(', ');
       return {
         sql: `INSERT INTO ${this.#tableName} (${names}) VALUES (${placeholders})`,
         params: [],
       };
     }
 
-    const names = inserts.map(([, c]) => c.name).join(", ");
-    const placeholders = inserts.map(() => "?").join(", ");
+    const names = inserts.map(([, c]) => c.name).join(', ');
+    const placeholders = inserts.map(() => '?').join(', ');
     const params = inserts.map(([key, c]) => {
       const value = (this.#row as Record<string, unknown>)[key];
       if (value === undefined && c.__internal.hasDefaultNow) {
@@ -1492,30 +1397,32 @@ export class InsertBuilder<T extends AnyTable, R extends boolean = false> implem
 
     // ON CONFLICT clause
     if (this.#onConflict) {
-      if (this.#onConflict.mode === "nothing") {
-        sql += " ON CONFLICT DO NOTHING";
+      if (this.#onConflict.mode === 'nothing') {
+        sql += ' ON CONFLICT DO NOTHING';
       } else {
         // Build target column(s)
         const target = this.#onConflict.target;
         const targetCols = Array.isArray(target) ? target : [target];
-        const targetNames = targetCols.map((c) => c.name).join(", ");
+        const targetNames = targetCols.map((c) => c.name).join(', ');
 
         // Build SET clause using excluded.* for proposed values
         const setEntries = Object.entries(this.#onConflict.set);
-        const setClauses = setEntries.map(([key, value]) => {
-          const col = getCol(this.#table, key);
-          if (value === undefined) return null;
-          // Use excluded.column for the proposed value
-          return `${col.name} = excluded.${col.name}`;
-        }).filter(Boolean);
+        const setClauses = setEntries
+          .map(([key, value]) => {
+            const col = getCol(this.#table, key);
+            if (value === undefined) return null;
+            // Use excluded.column for the proposed value
+            return `${col.name} = excluded.${col.name}`;
+          })
+          .filter(Boolean);
 
         if (setClauses.length > 0) {
-          sql += ` ON CONFLICT (${targetNames}) DO UPDATE SET ${setClauses.join(", ")}`;
+          sql += ` ON CONFLICT (${targetNames}) DO UPDATE SET ${setClauses.join(', ')}`;
         }
       }
     }
 
-    if (this.#returning) sql += " RETURNING *";
+    if (this.#returning) sql += ' RETURNING *';
     return { sql, params };
   }
 
@@ -1584,21 +1491,11 @@ export class UpdateBuilder<T extends AnyTable, R extends boolean = false> implem
   }
 
   set(partial: Partial<InferRow<T>>): UpdateBuilder<T, R> {
-    return new UpdateBuilder(
-      this.#client,
-      this.#tableName,
-      this.#table,
-      { ...this.#set, ...partial },
-      this.#conditions,
-      this.#returning,
-    );
+    return new UpdateBuilder(this.#client, this.#tableName, this.#table, { ...this.#set, ...partial }, this.#conditions, this.#returning);
   }
 
   where(condition: Condition): UpdateBuilder<T, R> {
-    return new UpdateBuilder(this.#client, this.#tableName, this.#table, this.#set, [
-      ...this.#conditions,
-      condition,
-    ], this.#returning);
+    return new UpdateBuilder(this.#client, this.#tableName, this.#table, this.#set, [...this.#conditions, condition], this.#returning);
   }
 
   /**
@@ -1626,10 +1523,10 @@ export class UpdateBuilder<T extends AnyTable, R extends boolean = false> implem
       setClauses.push(`${col.name} = ?`);
       params.push(col.__internal.encode((this.#set as Record<string, unknown>)[key]));
     }
-    let sql = `UPDATE ${this.#tableName} SET ${setClauses.join(", ")}`;
+    let sql = `UPDATE ${this.#tableName} SET ${setClauses.join(', ')}`;
     const where = compileConditions(this.#conditions, params);
-    if (where !== "1=1") sql += ` WHERE ${where}`;
-    if (this.#returning) sql += " RETURNING *";
+    if (where !== '1=1') sql += ` WHERE ${where}`;
+    if (this.#returning) sql += ' RETURNING *';
     return { sql, params };
   }
 
@@ -1667,10 +1564,7 @@ export class DeleteBuilder<T extends AnyTable, R extends boolean = false> implem
   }
 
   where(condition: Condition): DeleteBuilder<T, R> {
-    return new DeleteBuilder(this.#client, this.#tableName, this.#table, [
-      ...this.#conditions,
-      condition,
-    ], this.#returning);
+    return new DeleteBuilder(this.#client, this.#tableName, this.#table, [...this.#conditions, condition], this.#returning);
   }
 
   /**
@@ -1688,8 +1582,8 @@ export class DeleteBuilder<T extends AnyTable, R extends boolean = false> implem
     const params: unknown[] = [];
     let sql = `DELETE FROM ${this.#tableName}`;
     const where = compileConditions(this.#conditions, params);
-    if (where !== "1=1") sql += ` WHERE ${where}`;
-    if (this.#returning) sql += " RETURNING *";
+    if (where !== '1=1') sql += ` WHERE ${where}`;
+    if (this.#returning) sql += ' RETURNING *';
     return { sql, params };
   }
 

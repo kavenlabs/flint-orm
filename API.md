@@ -11,21 +11,21 @@ bun add flint-orm
 ## Quick Start
 
 ```ts
-import { flint, table, text, integer, eq } from "flint-orm";
+import { flint, table, text, integer, eq } from 'flint-orm';
 
 // Define schema
-const users = table("users", {
-  id: text("id").primaryKey(),
-  name: text("name").notNull(),
-  email: text("email").unique(),
-  age: integer("age"),
+const users = table('users', {
+  id: text('id').primaryKey(),
+  name: text('name').notNull(),
+  email: text('email').unique(),
+  age: integer('age'),
 });
 
 // Connect
-const db = flint({ url: "app.db" });
+const db = flint({ url: 'app.db' });
 
 // Query
-const user = db.select().from(users).where(eq(users.id, "u1")).single().execute();
+const user = db.select().from(users).where(eq(users.id, 'u1')).single().execute();
 // { id: "u1", name: "Alice", email: "alice@example.com", age: 30 }
 ```
 
@@ -38,14 +38,14 @@ const user = db.select().from(users).where(eq(users.id, "u1")).single().execute(
 Define a table. Columns live as direct properties. SQL metadata is under `._`.
 
 ```ts
-import { table, text, integer, boolean } from "flint-orm";
+import { table, text, integer, boolean } from 'flint-orm';
 
-const users = table("users", {
-  id: text("id").primaryKey(),
-  name: text("name").notNull(),
-  email: text("email").unique(),
-  active: boolean("active").default(true),
-  age: integer("age"),
+const users = table('users', {
+  id: text('id').primaryKey(),
+  name: text('name').notNull(),
+  email: text('email').unique(),
+  active: boolean('active').default(true),
+  age: integer('age'),
 });
 ```
 
@@ -54,50 +54,52 @@ const users = table("users", {
 Auto-converts camelCase keys to snake_case SQL names.
 
 ```ts
-import { snakeCase, text } from "flint-orm";
+import { snakeCase, text } from 'flint-orm';
 
-const users = snakeCase.table("users", {
-  id: text().primaryKey(),      // SQL: id
-  firstName: text().notNull(),  // SQL: first_name
-  createdAt: text(),           // SQL: created_at
+const users = snakeCase.table('users', {
+  id: text().primaryKey(), // SQL: id
+  firstName: text().notNull(), // SQL: first_name
+  createdAt: text(), // SQL: created_at
 });
 ```
 
 ### Column Types
 
-| Function | TS Type | SQLite Storage | Notes |
-|----------|---------|----------------|-------|
-| `text()` | `string` | TEXT | |
-| `integer()` | `number` | INTEGER | Supports `.autoIncrement()` |
-| `boolean()` | `boolean` | INTEGER (0/1) | Encodes/decodes automatically |
-| `json<T>()` | `T` | TEXT (JSON) | Generic, encodes/decodes automatically |
-| `real()` | `number` | REAL | |
-| `date()` | `Date` | INTEGER (epoch ms) | Supports `.defaultNow()`, `.onUpdate()` |
+| Function    | TS Type   | SQLite Storage     | Notes                                   |
+| ----------- | --------- | ------------------ | --------------------------------------- |
+| `text()`    | `string`  | TEXT               |                                         |
+| `integer()` | `number`  | INTEGER            | Supports `.autoIncrement()`             |
+| `boolean()` | `boolean` | INTEGER (0/1)      | Encodes/decodes automatically           |
+| `json<T>()` | `T`       | TEXT (JSON)        | Generic, encodes/decodes automatically  |
+| `real()`    | `number`  | REAL               |                                         |
+| `date()`    | `Date`    | INTEGER (epoch ms) | Supports `.defaultNow()`, `.onUpdate()` |
 
 ### Column Modifiers
 
 Every column supports chaining:
 
 ```ts
-text("name")
-  .primaryKey()      // PRIMARY KEY
-  .notNull()         // NOT NULL
-  .unique()          // UNIQUE
-  .default("hello")  // DEFAULT 'hello'
-  .defaultFn(() => new Date())  // DEFAULT (computed at insert)
-  .references(otherColumn)      // REFERENCES
+text('name')
+  .primaryKey() // PRIMARY KEY
+  .notNull() // NOT NULL
+  .unique() // UNIQUE
+  .default('hello') // DEFAULT 'hello'
+  .defaultFn(() => new Date()) // DEFAULT (computed at insert)
+  .references(otherColumn); // REFERENCES
 ```
 
 **Integer-only:**
+
 ```ts
-integer("id").autoIncrement()  // AUTOINCREMENT
+integer('id').autoIncrement(); // AUTOINCREMENT
 ```
 
 **Date-only:**
+
 ```ts
-date("created_at")
-  .defaultNow()   // DEFAULT (current epoch ms)
-  .onUpdate()     // Always set to now on UPDATE
+date('created_at')
+  .defaultNow() // DEFAULT (current epoch ms)
+  .onUpdate(); // Always set to now on UPDATE
 ```
 
 ### `InferRow<T>`
@@ -127,7 +129,7 @@ type UserInsert = InsertRow<typeof users>;
 Start a SELECT query. Two-phase: `.from()` is required before anything else.
 
 ```ts
-db.select().from(users).execute()
+db.select().from(users).execute();
 // SELECT * FROM users
 ```
 
@@ -136,7 +138,7 @@ db.select().from(users).execute()
 Narrow which columns appear in the result.
 
 ```ts
-db.select().from(users).columns(["id", "name"]).execute()
+db.select().from(users).columns(['id', 'name']).execute();
 // SELECT id, name FROM users
 // Returns: { id: string; name: string }[]
 ```
@@ -146,7 +148,7 @@ db.select().from(users).columns(["id", "name"]).execute()
 Filter rows.
 
 ```ts
-db.select().from(users).where(eq(users.active, true)).execute()
+db.select().from(users).where(eq(users.active, true)).execute();
 // SELECT * FROM users WHERE active = 1
 ```
 
@@ -155,7 +157,7 @@ db.select().from(users).where(eq(users.active, true)).execute()
 Return one row or null instead of an array. Adds `LIMIT 1`.
 
 ```ts
-db.select().from(users).where(eq(users.id, "u1")).single().execute()
+db.select().from(users).where(eq(users.id, 'u1')).single().execute();
 // SELECT * FROM users WHERE id = ? LIMIT 1
 // Returns: UserRow | null
 ```
@@ -165,7 +167,7 @@ db.select().from(users).where(eq(users.id, "u1")).single().execute()
 Sort results. Default direction is `"asc"`.
 
 ```ts
-db.select().from(users).orderBy("name", "desc").execute()
+db.select().from(users).orderBy('name', 'desc').execute();
 // SELECT * FROM users ORDER BY name DESC
 ```
 
@@ -174,7 +176,7 @@ db.select().from(users).orderBy("name", "desc").execute()
 Limit the number of results.
 
 ```ts
-db.select().from(users).limit(10).execute()
+db.select().from(users).limit(10).execute();
 // SELECT * FROM users LIMIT 10
 ```
 
@@ -183,7 +185,7 @@ db.select().from(users).limit(10).execute()
 Skip N rows.
 
 ```ts
-db.select().from(users).limit(10).offset(20).execute()
+db.select().from(users).limit(10).offset(20).execute();
 // SELECT * FROM users LIMIT 10 OFFSET 20
 ```
 
@@ -192,22 +194,14 @@ db.select().from(users).limit(10).offset(20).execute()
 Return unique rows.
 
 ```ts
-db.select().from(users).columns(["name"]).distinct().execute()
+db.select().from(users).columns(['name']).distinct().execute();
 // SELECT DISTINCT name FROM users
 ```
 
 ### Full Example
 
 ```ts
-const results = db
-  .select()
-  .from(users)
-  .columns(["id", "name"])
-  .where(eq(users.active, true))
-  .orderBy("name", "asc")
-  .limit(10)
-  .offset(0)
-  .execute();
+const results = db.select().from(users).columns(['id', 'name']).where(eq(users.active, true)).orderBy('name', 'asc').limit(10).offset(0).execute();
 // Returns: { id: string; name: string }[]
 ```
 
@@ -218,22 +212,26 @@ const results = db
 Insert a row. Two-phase: `.values()` is required before `.execute()`.
 
 ```ts
-db.insert(users).values({
-  id: "u1",
-  name: "Alice",
-  email: "alice@example.com",
-}).execute()
+db.insert(users)
+  .values({
+    id: 'u1',
+    name: 'Alice',
+    email: 'alice@example.com',
+  })
+  .execute();
 // INSERT INTO users (id, name, email) VALUES (?, ?, ?)
 ```
 
 Columns with defaults can be omitted:
 
 ```ts
-db.insert(users).values({
-  id: "u1",
-  name: "Alice",
-  // active defaults to true
-}).execute()
+db.insert(users)
+  .values({
+    id: 'u1',
+    name: 'Alice',
+    // active defaults to true
+  })
+  .execute();
 ```
 
 ---
@@ -243,21 +241,14 @@ db.insert(users).values({
 Update rows. Two-phase: `.set()` is required before `.execute()`.
 
 ```ts
-db.update(users)
-  .set({ name: "Bob" })
-  .where(eq(users.id, "u1"))
-  .execute()
+db.update(users).set({ name: 'Bob' }).where(eq(users.id, 'u1')).execute();
 // UPDATE users SET name = ? WHERE id = ?
 ```
 
 Multiple `.set()` calls merge:
 
 ```ts
-db.update(users)
-  .set({ name: "Bob" })
-  .set({ email: "bob@example.com" })
-  .where(eq(users.id, "u1"))
-  .execute()
+db.update(users).set({ name: 'Bob' }).set({ email: 'bob@example.com' }).where(eq(users.id, 'u1')).execute();
 // UPDATE users SET name = ?, email = ? WHERE id = ?
 ```
 
@@ -268,7 +259,7 @@ db.update(users)
 Delete rows.
 
 ```ts
-db.delete(users).where(eq(users.id, "u1")).execute()
+db.delete(users).where(eq(users.id, 'u1')).execute();
 // DELETE FROM users WHERE id = ?
 ```
 
@@ -281,21 +272,17 @@ db.delete(users).where(eq(users.id, "u1")).execute()
 LEFT JOIN. Returns all parent rows, with matching child data or null.
 
 ```ts
-const orders = table("orders", {
-  id: text("id").primaryKey(),
-  userId: text("userId").notNull().references(users.id),
-  total: integer("total").notNull(),
+const orders = table('orders', {
+  id: text('id').primaryKey(),
+  userId: text('userId').notNull().references(users.id),
+  total: integer('total').notNull(),
 });
 
 // With explicit condition
-db.leftJoin(orders)
-  .on(users, eq(orders.userId, users.id))
-  .execute()
+db.leftJoin(orders).on(users, eq(orders.userId, users.id)).execute();
 
 // Auto-join from foreign key (if .references() is defined)
-db.leftJoin(orders)
-  .on(users)
-  .execute()
+db.leftJoin(orders).on(users).execute();
 ```
 
 ### `db.innerJoin(parent).on(child, condition?)`
@@ -303,9 +290,7 @@ db.leftJoin(orders)
 INNER JOIN. Returns only rows where both tables match.
 
 ```ts
-db.innerJoin(orders)
-  .on(users, eq(orders.userId, users.id))
-  .execute()
+db.innerJoin(orders).on(users, eq(orders.userId, users.id)).execute();
 ```
 
 ### Join Result Shape
@@ -316,14 +301,14 @@ Joins return **nested** results, not flat-merged:
 // One-to-many: one user with multiple orders
 [
   {
-    id: "u1",
-    name: "Alice",
+    id: 'u1',
+    name: 'Alice',
     orders: [
-      { id: "o1", userId: "u1", total: 100 },
-      { id: "o2", userId: "u1", total: 200 },
-    ]
-  }
-]
+      { id: 'o1', userId: 'u1', total: 100 },
+      { id: 'o2', userId: 'u1', total: 200 },
+    ],
+  },
+];
 ```
 
 ### Join + Columns
@@ -331,20 +316,14 @@ Joins return **nested** results, not flat-merged:
 Narrow parent columns with `.columns()`:
 
 ```ts
-db.leftJoin(orders)
-  .on(users, eq(orders.userId, users.id))
-  .columns(["id", "name"])
-  .execute()
+db.leftJoin(orders).on(users, eq(orders.userId, users.id)).columns(['id', 'name']).execute();
 // Returns: { id: string; name: string; orders: OrderRow[] }[]
 ```
 
 ### `.single()` on Joins
 
 ```ts
-db.leftJoin(orders)
-  .on(users, eq(orders.userId, users.id))
-  .single()
-  .execute()
+db.leftJoin(orders).on(users, eq(orders.userId, users.id)).single().execute();
 // Returns: { id: string; name: string; orders: OrderRow[] } | null
 ```
 
@@ -357,47 +336,47 @@ All conditions are imported from `flint-orm`.
 ### Comparison
 
 ```ts
-eq(column, value)      // column = value
-eq(left, right)        // left = right (column-to-column)
-neq(column, value)     // column != value
-gt(column, value)      // column > value
-gte(column, value)     // column >= value
-lt(column, value)      // column < value
-lte(column, value)     // column <= value
+eq(column, value); // column = value
+eq(left, right); // left = right (column-to-column)
+neq(column, value); // column != value
+gt(column, value); // column > value
+gte(column, value); // column >= value
+lt(column, value); // column < value
+lte(column, value); // column <= value
 ```
 
 ### Range
 
 ```ts
-between(column, low, high)  // column BETWEEN low AND high
+between(column, low, high); // column BETWEEN low AND high
 ```
 
 ### Null Checks
 
 ```ts
-isNull(column)       // column IS NULL
-isNotNull(column)    // column IS NOT NULL
+isNull(column); // column IS NULL
+isNotNull(column); // column IS NOT NULL
 ```
 
 ### Array
 
 ```ts
-isIn(column, values)      // column IN (?, ?, ...)
-isNotIn(column, values)   // column NOT IN (?, ?, ...)
+isIn(column, values); // column IN (?, ?, ...)
+isNotIn(column, values); // column NOT IN (?, ?, ...)
 ```
 
 ### Pattern Matching
 
 ```ts
-like(column, pattern)   // column LIKE ?  (% and _ wildcards, case-insensitive)
-glob(column, pattern)   // column GLOB ?  (* and ? wildcards, case-sensitive)
+like(column, pattern); // column LIKE ?  (% and _ wildcards, case-insensitive)
+glob(column, pattern); // column GLOB ?  (* and ? wildcards, case-sensitive)
 ```
 
 ### Logical
 
 ```ts
-and(...conditions)   // cond1 AND cond2 AND ...
-or(...conditions)    // (cond1 OR cond2 OR ...)
+and(...conditions); // cond1 AND cond2 AND ...
+or(...conditions); // (cond1 OR cond2 OR ...)
 ```
 
 ### Examples
@@ -438,8 +417,8 @@ Aggregate functions are methods on the `db` object. They execute immediately and
 Count all rows.
 
 ```ts
-db.count(users)                              // 150
-db.count(users, eq(users.active, true))      // 120
+db.count(users); // 150
+db.count(users, eq(users.active, true)); // 120
 ```
 
 ### `db.countColumn(table, column, condition?)`
@@ -447,7 +426,7 @@ db.count(users, eq(users.active, true))      // 120
 Count non-null values in a column.
 
 ```ts
-db.countColumn(users, users.email)           // 145 (5 users have no email)
+db.countColumn(users, users.email); // 145 (5 users have no email)
 ```
 
 ### `db.sum(table, column, condition?)`
@@ -455,8 +434,8 @@ db.countColumn(users, users.email)           // 145 (5 users have no email)
 Sum of values. Returns `null` if no rows match.
 
 ```ts
-db.sum(orders, orders.total)                          // 45000
-db.sum(orders, orders.total, eq(orders.userId, "u1")) // 1500
+db.sum(orders, orders.total); // 45000
+db.sum(orders, orders.total, eq(orders.userId, 'u1')); // 1500
 ```
 
 ### `db.avg(table, column, condition?)`
@@ -464,8 +443,8 @@ db.sum(orders, orders.total, eq(orders.userId, "u1")) // 1500
 Average of values. Returns `null` if no rows match.
 
 ```ts
-db.avg(orders, orders.total)                          // 300
-db.avg(orders, orders.total, eq(orders.userId, "u1")) // 500
+db.avg(orders, orders.total); // 300
+db.avg(orders, orders.total, eq(orders.userId, 'u1')); // 500
 ```
 
 ### `db.min(table, column, condition?)`
@@ -473,8 +452,8 @@ db.avg(orders, orders.total, eq(orders.userId, "u1")) // 500
 Minimum value. Returns `null` if no rows match.
 
 ```ts
-db.min(orders, orders.total)                          // 10
-db.min(orders, orders.total, eq(orders.userId, "u1")) // 50
+db.min(orders, orders.total); // 10
+db.min(orders, orders.total, eq(orders.userId, 'u1')); // 50
 ```
 
 ### `db.max(table, column, condition?)`
@@ -482,8 +461,8 @@ db.min(orders, orders.total, eq(orders.userId, "u1")) // 50
 Maximum value. Returns `null` if no rows match.
 
 ```ts
-db.max(orders, orders.total)                          // 1000
-db.max(orders, orders.total, eq(orders.userId, "u1")) // 800
+db.max(orders, orders.total); // 1000
+db.max(orders, orders.total, eq(orders.userId, 'u1')); // 800
 ```
 
 ### Multiple Aggregates
@@ -491,11 +470,7 @@ db.max(orders, orders.total, eq(orders.userId, "u1")) // 800
 Use `Promise.all` when you need multiple aggregates:
 
 ```ts
-const [total, revenue, avgOrder] = await Promise.all([
-  db.count(orders),
-  db.sum(orders, orders.total),
-  db.avg(orders, orders.total),
-])
+const [total, revenue, avgOrder] = await Promise.all([db.count(orders), db.sum(orders, orders.total), db.avg(orders, orders.total)]);
 ```
 
 ---
@@ -505,14 +480,11 @@ const [total, revenue, avgOrder] = await Promise.all([
 Run multiple queries atomically in a single transaction.
 
 ```ts
-import { flint, table, text, eq } from "flint-orm";
+import { flint, table, text, eq } from 'flint-orm';
 
-const db = flint({ url: "app.db" });
+const db = flint({ url: 'app.db' });
 
-db.batch([
-  db.insert(orders).values({ id: "o1", userId: "u1", total: 100 }),
-  db.update(users).set({ totalOrders: 1 }).where(eq(users.id, "u1")),
-])
+db.batch([db.insert(orders).values({ id: 'o1', userId: 'u1', total: 100 }), db.update(users).set({ totalOrders: 1 }).where(eq(users.id, 'u1'))]);
 ```
 
 All queries succeed or all roll back.
@@ -524,10 +496,10 @@ All queries succeed or all roll back.
 Execute raw SQL directly.
 
 ```ts
-db.raw("SELECT * FROM users WHERE id = ?", ["u1"])
+db.raw('SELECT * FROM users WHERE id = ?', ['u1']);
 // Returns: Record<string, unknown>[]
 
-db.raw<{ count: number }>("SELECT count(*) as cnt FROM users")
+db.raw<{ count: number }>('SELECT count(*) as cnt FROM users');
 // Returns: { count: number }[]
 ```
 
@@ -538,7 +510,7 @@ db.raw<{ count: number }>("SELECT count(*) as cnt FROM users")
 Build parameterized SQL expressions.
 
 ```ts
-import { sql } from "flint-orm";
+import { sql } from 'flint-orm';
 
 const expr = sql`upper(${users.name})`;
 // { sql: "upper(?)", params: ["name_value"] }
@@ -551,23 +523,23 @@ const expr = sql`upper(${users.name})`;
 Access the underlying `bun:sqlite` client directly.
 
 ```ts
-db.$client  // Database instance
+db.$client; // Database instance
 ```
 
 ---
 
 ## Types
 
-| Type | Description |
-|------|-------------|
-| `TableDef<T>` | Table definition with hidden `._` metadata |
-| `ColumnDef<T, S>` | Column definition with phantom type `T` and storage class `S` |
-| `InferRow<T>` | Derives row type from table definition |
-| `InsertRow<T>` | Derives insert type (defaults are optional) |
-| `Condition` | Condition node for WHERE clauses |
-| `Executable` | Anything with a `.toSQL()` method (for `batch()`) |
-| `ConnectionDetails` | `{ url: string }` |
-| `SQLExpression` | `{ sql: string; params: unknown[] }` |
+| Type                | Description                                                   |
+| ------------------- | ------------------------------------------------------------- |
+| `TableDef<T>`       | Table definition with hidden `._` metadata                    |
+| `ColumnDef<T, S>`   | Column definition with phantom type `T` and storage class `S` |
+| `InferRow<T>`       | Derives row type from table definition                        |
+| `InsertRow<T>`      | Derives insert type (defaults are optional)                   |
+| `Condition`         | Condition node for WHERE clauses                              |
+| `Executable`        | Anything with a `.toSQL()` method (for `batch()`)             |
+| `ConnectionDetails` | `{ url: string }`                                             |
+| `SQLExpression`     | `{ sql: string; params: unknown[] }`                          |
 
 ---
 
@@ -575,7 +547,7 @@ db.$client  // Database instance
 
 Prefixed with `Flint` to avoid collisions in consumer codebases.
 
-| Class | When |
-|-------|------|
+| Class                  | When                                                              |
+| ---------------------- | ----------------------------------------------------------------- |
 | `FlintValidationError` | Invalid query construction (e.g., no primary key for `.single()`) |
-| `FlintQueryError` | Runtime SQL execution failure |
+| `FlintQueryError`      | Runtime SQL execution failure                                     |

@@ -1,28 +1,28 @@
 // Condition helpers
-import type { ColumnDef } from "../schema/columns";
+import type { ColumnDef } from '../schema/columns';
 
 /** A condition node used in WHERE clauses. */
 export type Condition =
-  | { type: "eq"; column: ColumnDef<any, any>; value: unknown }
-  | { type: "eqColumn"; left: ColumnDef<any, any>; right: ColumnDef<any, any> }
-  | { type: "gt"; column: ColumnDef<any, any>; value: unknown }
-  | { type: "gte"; column: ColumnDef<any, any>; value: unknown }
-  | { type: "lt"; column: ColumnDef<any, any>; value: unknown }
-  | { type: "lte"; column: ColumnDef<any, any>; value: unknown }
-  | { type: "neq"; column: ColumnDef<any, any>; value: unknown }
-  | { type: "in"; column: ColumnDef<any, any>; values: unknown[] }
-  | { type: "notIn"; column: ColumnDef<any, any>; values: unknown[] }
-  | { type: "isNull"; column: ColumnDef<any, any> }
-  | { type: "isNotNull"; column: ColumnDef<any, any> }
-  | { type: "like"; column: ColumnDef<any, any>; pattern: string }
-  | { type: "glob"; column: ColumnDef<any, any>; pattern: string }
-  | { type: "between"; column: ColumnDef<any, any>; low: unknown; high: unknown }
-  | { type: "and"; conditions: Condition[] }
-  | { type: "or"; conditions: Condition[] };
+  | { type: 'eq'; column: ColumnDef<any, any>; value: unknown }
+  | { type: 'eqColumn'; left: ColumnDef<any, any>; right: ColumnDef<any, any> }
+  | { type: 'gt'; column: ColumnDef<any, any>; value: unknown }
+  | { type: 'gte'; column: ColumnDef<any, any>; value: unknown }
+  | { type: 'lt'; column: ColumnDef<any, any>; value: unknown }
+  | { type: 'lte'; column: ColumnDef<any, any>; value: unknown }
+  | { type: 'neq'; column: ColumnDef<any, any>; value: unknown }
+  | { type: 'in'; column: ColumnDef<any, any>; values: unknown[] }
+  | { type: 'notIn'; column: ColumnDef<any, any>; values: unknown[] }
+  | { type: 'isNull'; column: ColumnDef<any, any> }
+  | { type: 'isNotNull'; column: ColumnDef<any, any> }
+  | { type: 'like'; column: ColumnDef<any, any>; pattern: string }
+  | { type: 'glob'; column: ColumnDef<any, any>; pattern: string }
+  | { type: 'between'; column: ColumnDef<any, any>; low: unknown; high: unknown }
+  | { type: 'and'; conditions: Condition[] }
+  | { type: 'or'; conditions: Condition[] };
 
 /** @internal Type guard — check if a value is a ColumnDef. */
 function isColumnDef(value: unknown): value is ColumnDef<any, any> {
-  return value !== null && typeof value === "object" && "__internal" in (value as Record<string, unknown>);
+  return value !== null && typeof value === 'object' && '__internal' in (value as Record<string, unknown>);
 }
 
 /**
@@ -39,9 +39,9 @@ export function eq<T>(column: ColumnDef<T, any>, value: T): Condition;
 export function eq<T>(left: ColumnDef<T, any>, right: ColumnDef<T, any>): Condition;
 export function eq(left: ColumnDef<any, any>, valueOrColumn: unknown): Condition {
   if (isColumnDef(valueOrColumn)) {
-    return { type: "eqColumn", left, right: valueOrColumn };
+    return { type: 'eqColumn', left, right: valueOrColumn };
   }
-  return { type: "eq", column: left, value: valueOrColumn };
+  return { type: 'eq', column: left, value: valueOrColumn };
 }
 
 /**
@@ -51,7 +51,7 @@ export function eq(left: ColumnDef<any, any>, valueOrColumn: unknown): Condition
  * where(and(eq(users.name, "Alice"), eq(users.active, true)))
  */
 export function and(...conditions: Condition[]): Condition {
-  return { type: "and", conditions };
+  return { type: 'and', conditions };
 }
 
 /**
@@ -61,7 +61,7 @@ export function and(...conditions: Condition[]): Condition {
  * where(or(eq(users.role, "admin"), eq(users.role, "moderator")))
  */
 export function or(...conditions: Condition[]): Condition {
-  return { type: "or", conditions };
+  return { type: 'or', conditions };
 }
 
 /**
@@ -71,7 +71,7 @@ export function or(...conditions: Condition[]): Condition {
  * where(isIn(users.id, ["u1", "u2", "u3"]))
  */
 export function isIn<T>(column: ColumnDef<T, any>, values: T[]): Condition {
-  return { type: "in", column, values };
+  return { type: 'in', column, values };
 }
 
 /**
@@ -81,7 +81,7 @@ export function isIn<T>(column: ColumnDef<T, any>, values: T[]): Condition {
  * where(isNotIn(users.id, ["u4", "u5"]))
  */
 export function isNotIn<T>(column: ColumnDef<T, any>, values: T[]): Condition {
-  return { type: "notIn", column, values };
+  return { type: 'notIn', column, values };
 }
 
 /**
@@ -91,7 +91,7 @@ export function isNotIn<T>(column: ColumnDef<T, any>, values: T[]): Condition {
  * where(isNull(users.deletedAt))
  */
 export function isNull(column: ColumnDef<any, any>): Condition {
-  return { type: "isNull", column };
+  return { type: 'isNull', column };
 }
 
 /**
@@ -101,7 +101,7 @@ export function isNull(column: ColumnDef<any, any>): Condition {
  * where(isNotNull(users.name))
  */
 export function isNotNull(column: ColumnDef<any, any>): Condition {
-  return { type: "isNotNull", column };
+  return { type: 'isNotNull', column };
 }
 
 /**
@@ -111,7 +111,7 @@ export function isNotNull(column: ColumnDef<any, any>): Condition {
  * where(like(users.name, "A%"))
  */
 export function like(column: ColumnDef<any, any>, pattern: string): Condition {
-  return { type: "like", column, pattern };
+  return { type: 'like', column, pattern };
 }
 
 /**
@@ -121,7 +121,7 @@ export function like(column: ColumnDef<any, any>, pattern: string): Condition {
  * where(glob(users.name, "A*"))
  */
 export function glob(column: ColumnDef<any, any>, pattern: string): Condition {
-  return { type: "glob", column, pattern };
+  return { type: 'glob', column, pattern };
 }
 
 /**
@@ -131,7 +131,7 @@ export function glob(column: ColumnDef<any, any>, pattern: string): Condition {
  * where(between(users.age, 18, 65))
  */
 export function between<T>(column: ColumnDef<T, any>, low: T, high: T): Condition {
-  return { type: "between", column, low, high };
+  return { type: 'between', column, low, high };
 }
 
 /**
@@ -141,7 +141,7 @@ export function between<T>(column: ColumnDef<T, any>, low: T, high: T): Conditio
  * where(gt(users.age, 18))
  */
 export function gt<T>(column: ColumnDef<T, any>, value: T): Condition {
-  return { type: "gt", column, value };
+  return { type: 'gt', column, value };
 }
 
 /**
@@ -151,7 +151,7 @@ export function gt<T>(column: ColumnDef<T, any>, value: T): Condition {
  * where(gte(users.age, 18))
  */
 export function gte<T>(column: ColumnDef<T, any>, value: T): Condition {
-  return { type: "gte", column, value };
+  return { type: 'gte', column, value };
 }
 
 /**
@@ -161,7 +161,7 @@ export function gte<T>(column: ColumnDef<T, any>, value: T): Condition {
  * where(lt(users.age, 65))
  */
 export function lt<T>(column: ColumnDef<T, any>, value: T): Condition {
-  return { type: "lt", column, value };
+  return { type: 'lt', column, value };
 }
 
 /**
@@ -171,7 +171,7 @@ export function lt<T>(column: ColumnDef<T, any>, value: T): Condition {
  * where(lte(users.age, 65))
  */
 export function lte<T>(column: ColumnDef<T, any>, value: T): Condition {
-  return { type: "lte", column, value };
+  return { type: 'lte', column, value };
 }
 
 /**
@@ -181,82 +181,68 @@ export function lte<T>(column: ColumnDef<T, any>, value: T): Condition {
  * where(neq(users.id, "u1"))
  */
 export function neq<T>(column: ColumnDef<T, any>, value: T): Condition {
-  return { type: "neq", column, value };
+  return { type: 'neq', column, value };
 }
 
-export function compileCondition(
-  cond: Condition,
-  params: unknown[],
-): string {
+export function compileCondition(cond: Condition, params: unknown[]): string {
   switch (cond.type) {
-    case "eq":
+    case 'eq':
       params.push(cond.column.__internal.encode(cond.value));
       return `${cond.column.name} = ?`;
-    case "eqColumn": {
-      const leftName = cond.left.__internal.tableName
-        ? `${cond.left.__internal.tableName}.${cond.left.name}`
-        : cond.left.name;
-      const rightName = cond.right.__internal.tableName
-        ? `${cond.right.__internal.tableName}.${cond.right.name}`
-        : cond.right.name;
+    case 'eqColumn': {
+      const leftName = cond.left.__internal.tableName ? `${cond.left.__internal.tableName}.${cond.left.name}` : cond.left.name;
+      const rightName = cond.right.__internal.tableName ? `${cond.right.__internal.tableName}.${cond.right.name}` : cond.right.name;
       return `${leftName} = ${rightName}`;
     }
-    case "in": {
+    case 'in': {
       const encoded = cond.values.map((v) => cond.column.__internal.encode(v));
       params.push(...encoded);
-      const placeholders = encoded.map(() => "?").join(", ");
+      const placeholders = encoded.map(() => '?').join(', ');
       return `${cond.column.name} IN (${placeholders})`;
     }
-    case "notIn": {
+    case 'notIn': {
       const encoded = cond.values.map((v) => cond.column.__internal.encode(v));
       params.push(...encoded);
-      const placeholders = encoded.map(() => "?").join(", ");
+      const placeholders = encoded.map(() => '?').join(', ');
       return `${cond.column.name} NOT IN (${placeholders})`;
     }
-    case "isNull":
+    case 'isNull':
       return `${cond.column.name} IS NULL`;
-    case "isNotNull":
+    case 'isNotNull':
       return `${cond.column.name} IS NOT NULL`;
-    case "like":
+    case 'like':
       params.push(cond.pattern);
       return `${cond.column.name} LIKE ?`;
-    case "glob":
+    case 'glob':
       params.push(cond.pattern);
       return `${cond.column.name} GLOB ?`;
-    case "between":
+    case 'between':
       params.push(cond.column.__internal.encode(cond.low));
       params.push(cond.column.__internal.encode(cond.high));
       return `${cond.column.name} BETWEEN ? AND ?`;
-    case "gt":
+    case 'gt':
       params.push(cond.column.__internal.encode(cond.value));
       return `${cond.column.name} > ?`;
-    case "gte":
+    case 'gte':
       params.push(cond.column.__internal.encode(cond.value));
       return `${cond.column.name} >= ?`;
-    case "lt":
+    case 'lt':
       params.push(cond.column.__internal.encode(cond.value));
       return `${cond.column.name} < ?`;
-    case "lte":
+    case 'lte':
       params.push(cond.column.__internal.encode(cond.value));
       return `${cond.column.name} <= ?`;
-    case "neq":
+    case 'neq':
       params.push(cond.column.__internal.encode(cond.value));
       return `${cond.column.name} != ?`;
-    case "and":
-      return cond.conditions
-        .map((c) => compileCondition(c, params))
-        .join(" AND ");
-    case "or":
-      return `(${cond.conditions
-        .map((c) => compileCondition(c, params))
-        .join(" OR ")})`;
+    case 'and':
+      return cond.conditions.map((c) => compileCondition(c, params)).join(' AND ');
+    case 'or':
+      return `(${cond.conditions.map((c) => compileCondition(c, params)).join(' OR ')})`;
   }
 }
 
-export function compileConditions(
-  conditions: Condition[],
-  params: unknown[],
-): string {
-  if (conditions.length === 0) return "1=1";
-  return conditions.map((c) => compileCondition(c, params)).join(" AND ");
+export function compileConditions(conditions: Condition[], params: unknown[]): string {
+  if (conditions.length === 0) return '1=1';
+  return conditions.map((c) => compileCondition(c, params)).join(' AND ');
 }

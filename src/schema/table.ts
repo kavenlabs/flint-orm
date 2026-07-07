@@ -1,5 +1,5 @@
 // Table definition
-import type { ColumnDef, IntegerColumnDef, DateColumnDef, DateColumnDefWithDefault } from "./columns";
+import type { ColumnDef, IntegerColumnDef, DateColumnDef, DateColumnDefWithDefault } from './columns';
 /** A table definition mapping column names to their `ColumnDef`s. */
 export type TableDef<T> = T & {
   readonly _: { readonly name: string };
@@ -27,10 +27,7 @@ type StampedColumn = ColumnDef<any, any> & {
   onUpdate?: () => ColumnDef<any, any>;
 };
 
-export function table<T extends Record<string, ColumnDef<any, any>>>(
-  name: string,
-  columns: T,
-): TableDef<T> {
+export function table<T extends Record<string, ColumnDef<any, any>>>(name: string, columns: T): TableDef<T> {
   // Stamp table name onto each column
   const stamped = Object.create(null);
   for (const [key, col] of Object.entries(columns)) {
@@ -50,30 +47,40 @@ export function table<T extends Record<string, ColumnDef<any, any>>>(
         return { ...this, __internal: { ...stampedInternal, isUnique: true } };
       },
       default(value: any) {
-        return { ...this, __internal: { ...stampedInternal, hasDefault: true, defaultValue: value } };
+        return {
+          ...this,
+          __internal: { ...stampedInternal, hasDefault: true, defaultValue: value },
+        };
       },
       defaultFn(fn: () => any) {
         return { ...this, __internal: { ...stampedInternal, hasDefault: true, defaultFn: fn } };
       },
       references(target: ColumnDef<any, any>) {
-        return { ...this, __internal: { ...stampedInternal, referencesTable: target.__internal.tableName, referencesColumn: target.name } };
+        return {
+          ...this,
+          __internal: {
+            ...stampedInternal,
+            referencesTable: target.__internal.tableName,
+            referencesColumn: target.name,
+          },
+        };
       },
     };
 
     // Preserve autoIncrement if the original column had it (integer columns)
-    if ("autoIncrement" in col) {
+    if ('autoIncrement' in col) {
       stampedCol.autoIncrement = function () {
         return { ...this, __internal: { ...stampedInternal, isAutoIncrement: true } };
       };
     }
 
     // Preserve defaultNow/onUpdate if the original column had them (date columns)
-    if ("defaultNow" in col) {
+    if ('defaultNow' in col) {
       stampedCol.defaultNow = function () {
         return { ...this, __internal: { ...stampedInternal, hasDefaultNow: true } };
       };
     }
-    if ("onUpdate" in col) {
+    if ('onUpdate' in col) {
       stampedCol.onUpdate = function () {
         return { ...this, __internal: { ...stampedInternal, hasOnUpdate: true } };
       };
@@ -97,34 +104,27 @@ export function table<T extends Record<string, ColumnDef<any, any>>>(
  * This produces cleaner hover info: { id: string; name: string } instead of
  * Pick<InferRow<TableDef<{...}>>, ...>.
  */
-export type InferRow<T extends TableDef<any>> = T extends TableDef<infer C>
-  ? {
-      [K in keyof Omit<C, "_">]: C[K] extends DateColumnDefWithDefault
-        ? Date
-        : C[K] extends DateColumnDef
-          ? Date | null
-          : C[K] extends ColumnDef<any, any>
-            ? C[K]["__internal"]["_type"]
-            : never;
-    }
-  : never;
+export type InferRow<T extends TableDef<any>> =
+  T extends TableDef<infer C>
+    ? {
+        [K in keyof Omit<C, '_'>]: C[K] extends DateColumnDefWithDefault
+          ? Date
+          : C[K] extends DateColumnDef
+            ? Date | null
+            : C[K] extends ColumnDef<any, any>
+              ? C[K]['__internal']['_type']
+              : never;
+      }
+    : never;
 
 /** @internal Check if a column has an auto-generated default. */
-type HasAutoDefault<C> = C extends DateColumnDef
-  ? true
-  : C extends IntegerColumnDef<any>
-    ? true
-    : false;
+type HasAutoDefault<C> = C extends DateColumnDef ? true : C extends IntegerColumnDef<any> ? true : false;
 
 /** The row type for inserts — columns with auto-defaults (integer, date) are optional. */
 export type InsertRow<T extends TableDef<any>> = {
-  [K in keyof Omit<T, "_"> as HasAutoDefault<T[K]> extends true ? never : K]: T[K] extends ColumnDef<any, any>
-    ? T[K]["__internal"]["_type"]
-    : never;
+  [K in keyof Omit<T, '_'> as HasAutoDefault<T[K]> extends true ? never : K]: T[K] extends ColumnDef<any, any> ? T[K]['__internal']['_type'] : never;
 } & {
-  [K in keyof Omit<T, "_"> as HasAutoDefault<T[K]> extends true ? K : never]?: T[K] extends ColumnDef<any, any>
-    ? T[K]["__internal"]["_type"]
-    : never;
+  [K in keyof Omit<T, '_'> as HasAutoDefault<T[K]> extends true ? K : never]?: T[K] extends ColumnDef<any, any> ? T[K]['__internal']['_type'] : never;
 };
 
 // @internal snakeCase helper
@@ -144,10 +144,7 @@ function toSnakeCase(str: string): string {
  *   firstName: text(),
  * });
  */
-export function snakeCaseTable<T extends Record<string, ColumnDef<any, any>>>(
-  tableName: string,
-  columns: T,
-): TableDef<T> {
+export function snakeCaseTable<T extends Record<string, ColumnDef<any, any>>>(tableName: string, columns: T): TableDef<T> {
   // Create a new object with snake_case names stamped onto each column
   const converted: Record<string, ColumnDef<any, any>> = {};
   for (const [key, col] of Object.entries(columns)) {
@@ -168,27 +165,37 @@ export function snakeCaseTable<T extends Record<string, ColumnDef<any, any>>>(
         return { ...this, __internal: { ...stampedInternal, isUnique: true } };
       },
       default(value: any) {
-        return { ...this, __internal: { ...stampedInternal, hasDefault: true, defaultValue: value } };
+        return {
+          ...this,
+          __internal: { ...stampedInternal, hasDefault: true, defaultValue: value },
+        };
       },
       defaultFn(fn: () => any) {
         return { ...this, __internal: { ...stampedInternal, hasDefault: true, defaultFn: fn } };
       },
       references(target: ColumnDef<any, any>) {
-        return { ...this, __internal: { ...stampedInternal, referencesTable: target.__internal.tableName, referencesColumn: target.name } };
+        return {
+          ...this,
+          __internal: {
+            ...stampedInternal,
+            referencesTable: target.__internal.tableName,
+            referencesColumn: target.name,
+          },
+        };
       },
     };
 
-    if ("autoIncrement" in col) {
+    if ('autoIncrement' in col) {
       stampedCol.autoIncrement = function () {
         return { ...this, __internal: { ...stampedInternal, isAutoIncrement: true } };
       };
     }
-    if ("defaultNow" in col) {
+    if ('defaultNow' in col) {
       stampedCol.defaultNow = function () {
         return { ...this, __internal: { ...stampedInternal, hasDefaultNow: true } };
       };
     }
-    if ("onUpdate" in col) {
+    if ('onUpdate' in col) {
       stampedCol.onUpdate = function () {
         return { ...this, __internal: { ...stampedInternal, hasOnUpdate: true } };
       };
