@@ -105,10 +105,41 @@ async function cmdGenerate(
   }
 
   if (preview) {
-    console.log("\n--- Preview mode — would generate migration ---");
-    console.log(`   Name: ${name}`);
+    // Dynamic import of migration functions
+    const { serializeSchema } = await import("./migration/serialize.js");
+    const { diffSchemas, emptyState } = await import("./migration/diff.js");
+    const { generateSQL } = await import("./migration/sql.js");
+
+    // Find latest state
+    const { existsSync, readFileSync, readdirSync } = await import("node:fs");
+    const migrationsDir = resolve(process.cwd(), config.migrations);
+    let previousState: ReturnType<typeof emptyState> = null as any;
+    if (existsSync(migrationsDir)) {
+      const folders = readdirSync(migrationsDir).filter((e) => /^\d{3}_/.test(e)).sort().reverse();
+      for (const folder of folders) {
+        const statePath = join(migrationsDir, folder, "state.json");
+        if (existsSync(statePath)) {
+          previousState = JSON.parse(readFileSync(statePath, "utf-8"));
+          break;
+        }
+      }
+    }
+    if (!previousState) previousState = emptyState();
+
+    const currentState = serializeSchema(tables as any[]);
+    const operations = diffSchemas(previousState, currentState);
+
+    if (operations.length === 0) {
+      console.log("\n✅ No changes detected — schema is already up to date.");
+      return;
+    }
+
+    const sql = generateSQL(operations);
+    console.log(`\n--- Preview: ${name} ---`);
+    console.log(`   Operations: ${operations.length}`);
     console.log(`   Migrations dir: ${config.migrations}`);
-    console.log("   (dry run, no files written)");
+    console.log(`\n--- SQL ---\n${sql}\n`);
+    console.log("(dry run, no files written)");
     return;
   }
 
