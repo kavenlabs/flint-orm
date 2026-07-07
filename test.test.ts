@@ -4,13 +4,13 @@
 // column selection, joins, and .single().
 // -----------------------------------------------------------------------
 
-import { flint } from './flint';
-import { eq, and, isNotNull, like, glob, between, gt, gte, lt, lte, neq } from './query/conditions';
-import { text, boolean, json, integer, date } from './schema/columns';
-import { table } from './schema/table';
-import { FlintValidationError } from './errors';
-import type { InferRow } from './schema/table';
-import type { JoinResult } from './query/builder';
+import { flint } from '~/flint';
+import { eq, and, isNotNull, like, glob, between, gt, gte, lt, lte, neq } from '~/query/conditions';
+import { text, boolean, json, integer, date } from '~/schema/columns';
+import { table } from '~/schema/table';
+import { FlintValidationError } from '~/errors';
+import type { InferRow } from '~/schema/table';
+import type { JoinResult } from '~/query/builder';
 
 // ── Schema ─────────────────────────────────────────────────────────────────
 
