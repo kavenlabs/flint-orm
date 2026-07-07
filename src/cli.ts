@@ -148,7 +148,7 @@ async function cmdGenerate(
   const { generate } = await import("./migration/generate.js");
 
   try {
-    const result = generate(tables as any[], resolve(process.cwd(), config.migrations), name ?? "schema_change");
+    const result = generate(tables as any[], resolve(process.cwd(), config.migrations), name);
     console.log(`\n✅ Migration generated: ${result.folderName}`);
     console.log(`   Operations: ${result.operations.length}`);
     console.log(`\n--- SQL Preview ---\n${result.sql}`);
@@ -186,7 +186,7 @@ Commands:
   migrate    Apply pending migrations (stub — not yet implemented)
 
 Options for generate:
-  --name <name>     Migration name (default: "schema_change")
+  --name <name>     Migration name (optional)
   --preview         Show what would be generated without writing files
 
 Examples:

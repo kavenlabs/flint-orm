@@ -149,7 +149,7 @@ export interface GenerateResult {
 export function generate(
   tables: TableDef<any>[],
   migrationsDir: string,
-  migrationName: string,
+  migrationName?: string,
 ): GenerateResult {
   const previous = findLatestState(migrationsDir) ?? emptyState();
   const current = serializeSchema(tables);
