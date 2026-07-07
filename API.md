@@ -234,6 +234,39 @@ db.insert(users)
   .execute();
 ```
 
+### `.returning()`
+
+Return the inserted row(s) instead of void. Adds `RETURNING *` to the SQL.
+
+```ts
+const user = db.insert(users).values({ id: 'u1', name: 'Alice' }).returning().execute();
+// Returns: { id: string; name: string; ... }[]
+```
+
+### `.onConflictDoNothing()`
+
+Skip the insert if a row with the same primary key already exists.
+
+```ts
+db.insert(users).values({ id: 'u1', name: 'Alice' }).onConflictDoNothing().execute();
+// INSERT OR IGNORE INTO users ...
+```
+
+### `.onConflictDoUpdate()`
+
+Update specific columns when a row with the same primary key already exists (upsert).
+
+```ts
+db.insert(users)
+  .values({ id: 'u1', name: 'Alice' })
+  .onConflictDoUpdate({
+    target: users.id,
+    set: { name: 'Alice Updated' },
+  })
+  .execute();
+// INSERT INTO users ... ON CONFLICT (id) DO UPDATE SET name = excluded.name
+```
+
 ---
 
 ### `db.update(table).set(partial).where(condition)`
@@ -252,6 +285,15 @@ db.update(users).set({ name: 'Bob' }).set({ email: 'bob@example.com' }).where(eq
 // UPDATE users SET name = ?, email = ? WHERE id = ?
 ```
 
+### `.returning()`
+
+Return the updated row(s) instead of void.
+
+```ts
+const updated = db.update(users).set({ name: 'Bob' }).where(eq(users.id, 'u1')).returning().execute();
+// Returns: { id: string; name: string; ... }[]
+```
+
 ---
 
 ### `db.delete(table).where(condition)`
@@ -261,6 +303,15 @@ Delete rows.
 ```ts
 db.delete(users).where(eq(users.id, 'u1')).execute();
 // DELETE FROM users WHERE id = ?
+```
+
+### `.returning()`
+
+Return the deleted row(s) instead of void.
+
+```ts
+const deleted = db.delete(users).where(eq(users.id, 'u1')).returning().execute();
+// Returns: { id: string; name: string; ... }[]
 ```
 
 ---
