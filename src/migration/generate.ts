@@ -51,10 +51,10 @@ function randomWords(): string {
 
 function generateFolderName(migrationName?: string): string {
   const timestamp = Math.floor(Date.now() / 1000);
-  const words = randomWords();
   if (migrationName) {
-    return `${timestamp}_${words}_${migrationName}`;
+    return `${timestamp}_${migrationName}`;
   }
+  const words = randomWords();
   return `${timestamp}_${words}`;
 }
 
