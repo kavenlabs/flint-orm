@@ -1267,6 +1267,7 @@ export class SingleJoinBuilderImpl<
 /** Phase 1 of an INSERT — only `.values()` is available. */
 export interface InsertStage1<T extends AnyTable> {
   values(row: InsertRow<T>): InsertBuilder<T>;
+  values(rows: InsertRow<T>[]): InsertBuilder<T>;
 }
 
 /** @internal Lightweight wrapper that only exposes `.values()`. */
@@ -1281,8 +1282,10 @@ export class InsertValuesBuilder<T extends AnyTable> implements InsertStage1<T> 
     this.#table = table;
   }
 
-  values(row: InsertRow<T>): InsertBuilder<T> {
-    return new InsertBuilder(this.#client, this.#tableName, this.#table, row);
+  values(row: InsertRow<T>): InsertBuilder<T>;
+  values(rows: InsertRow<T>[]): InsertBuilder<T>;
+  values(rowOrRows: InsertRow<T> | InsertRow<T>[]): InsertBuilder<T> {
+    return new InsertBuilder(this.#client, this.#tableName, this.#table, rowOrRows);
   }
 }
 
@@ -1296,31 +1299,42 @@ type OnConflictDoUpdate<T extends AnyTable> = {
 type OnConflictStrategy<T extends AnyTable> = OnConflictDoNothing | OnConflictDoUpdate<T>;
 
 /** Full INSERT builder — available after `.values()` has been called. */
-export class InsertBuilder<T extends AnyTable, R extends boolean = false> implements Executable {
+export class InsertBuilder<T extends AnyTable, R extends boolean = false, K extends keyof InferRow<T> = keyof InferRow<T>> implements Executable {
   #client: DatabaseClient;
   #tableName: string;
   #table: T;
-  #row: InsertRow<T>;
-  #returning: boolean;
+  #rows: InsertRow<T>[];
+  #returning: boolean | K[];
   #onConflict?: OnConflictStrategy<T>;
 
-  constructor(client: DatabaseClient, tableName: string, table: T, row: InsertRow<T>, returning: R = false as R, onConflict?: OnConflictStrategy<T>) {
+  constructor(
+    client: DatabaseClient,
+    tableName: string,
+    table: T,
+    rowOrRows: InsertRow<T> | InsertRow<T>[],
+    returning: boolean | K[] = false,
+    onConflict?: OnConflictStrategy<T>,
+  ) {
     this.#client = client;
     this.#tableName = tableName;
     this.#table = table;
-    this.#row = row;
+    this.#rows = Array.isArray(rowOrRows) ? rowOrRows : [rowOrRows];
     this.#returning = returning;
     this.#onConflict = onConflict;
   }
 
   /**
    * Return the inserted row(s) instead of void.
+   * Pass an array of column names to narrow the result shape.
    *
    * @example
    * db.insert(users).values({ id: "u1", name: "Alice" }).returning()
+   * db.insert(users).values({ id: "u1", name: "Alice" }).returning(["id", "name"])
    */
-  returning(): InsertBuilder<T, true> {
-    return new InsertBuilder(this.#client, this.#tableName, this.#table, this.#row, true, this.#onConflict);
+  returning(): InsertBuilder<T, true>;
+  returning<NewK extends keyof InferRow<T>>(keys: NewK[]): InsertBuilder<T, true, NewK>;
+  returning(keys?: (keyof InferRow<T>)[]): InsertBuilder<T, true, keyof InferRow<T>> {
+    return new InsertBuilder(this.#client, this.#tableName, this.#table, this.#rows, keys ?? true, this.#onConflict);
   }
 
   /**
@@ -1329,8 +1343,8 @@ export class InsertBuilder<T extends AnyTable, R extends boolean = false> implem
    * @example
    * db.insert(users).values(row).onConflictDoNothing()
    */
-  onConflictDoNothing(): InsertBuilder<T, R> {
-    return new InsertBuilder(this.#client, this.#tableName, this.#table, this.#row, this.#returning as R, { mode: 'nothing' });
+  onConflictDoNothing(): InsertBuilder<T, R, K> {
+    return new InsertBuilder(this.#client, this.#tableName, this.#table, this.#rows, this.#returning, { mode: 'nothing' });
   }
 
   /**
@@ -1342,8 +1356,8 @@ export class InsertBuilder<T extends AnyTable, R extends boolean = false> implem
    *   set: { name: "Alice" },
    * })
    */
-  onConflictDoUpdate<C extends ColumnDef<any, any>>(options: { target: C | C[]; set: Partial<InferRow<T>> }): InsertBuilder<T, R> {
-    return new InsertBuilder(this.#client, this.#tableName, this.#table, this.#row, this.#returning as R, {
+  onConflictDoUpdate<C extends ColumnDef<any, any>>(options: { target: C | C[]; set: Partial<InferRow<T>> }): InsertBuilder<T, R, K> {
+    return new InsertBuilder(this.#client, this.#tableName, this.#table, this.#rows, this.#returning, {
       mode: 'update',
       target: options.target,
       set: options.set,
@@ -1353,21 +1367,11 @@ export class InsertBuilder<T extends AnyTable, R extends boolean = false> implem
   toSQL(): { sql: string; params: unknown[] } {
     const entries = columnEntries(this.#table);
 
-    // Filter out columns with defaults when value is undefined
+    // Determine which columns to insert (skip defaults/autoincrement when undefined in ALL rows)
     const inserts: [string, ColumnDef<any, any>][] = [];
     for (const [key, c] of entries) {
-      const value = (this.#row as Record<string, unknown>)[key];
-      if (value === undefined && c.__internal.hasDefault) {
-        // Skip — let SQLite handle the default
-        continue;
-      }
-      if (value === undefined && c.__internal.isAutoIncrement) {
-        // Skip — let SQLite handle autoincrement
-        continue;
-      }
-      if (value === undefined && c.__internal.hasDefaultNow) {
-        // Use current time as default
-        inserts.push([key, c]);
+      const allUndefined = this.#rows.every((row) => (row as Record<string, unknown>)[key] === undefined);
+      if (allUndefined && (c.__internal.hasDefault || c.__internal.isAutoIncrement)) {
         continue;
       }
       inserts.push([key, c]);
@@ -1385,15 +1389,22 @@ export class InsertBuilder<T extends AnyTable, R extends boolean = false> implem
     }
 
     const names = inserts.map(([, c]) => c.name).join(', ');
-    const placeholders = inserts.map(() => '?').join(', ');
-    const params = inserts.map(([key, c]) => {
-      const value = (this.#row as Record<string, unknown>)[key];
-      if (value === undefined && c.__internal.hasDefaultNow) {
-        return c.__internal.encode(new Date());
+    const placeholderRow = inserts.map(() => '?').join(', ');
+    const allPlaceholders = this.#rows.map(() => `(${placeholderRow})`).join(', ');
+
+    const params: unknown[] = [];
+    for (const row of this.#rows) {
+      for (const [key, c] of inserts) {
+        const value = (row as Record<string, unknown>)[key];
+        if (value === undefined && c.__internal.hasDefaultNow) {
+          params.push(c.__internal.encode(new Date()));
+        } else {
+          params.push(c.__internal.encode(value));
+        }
       }
-      return c.__internal.encode(value);
-    });
-    let sql = `INSERT INTO ${this.#tableName} (${names}) VALUES (${placeholders})`;
+    }
+
+    let sql = `INSERT INTO ${this.#tableName} (${names}) VALUES ${allPlaceholders}`;
 
     // ON CONFLICT clause
     if (this.#onConflict) {
@@ -1422,17 +1433,29 @@ export class InsertBuilder<T extends AnyTable, R extends boolean = false> implem
       }
     }
 
-    if (this.#returning) sql += ' RETURNING *';
+    if (this.#returning) {
+      if (Array.isArray(this.#returning)) {
+        const cols = this.#returning.map((k) => getCol(this.#table, k as string).name).join(', ');
+        sql += ` RETURNING ${cols}`;
+      } else {
+        sql += ' RETURNING *';
+      }
+    }
     return { sql, params };
   }
 
-  execute(): R extends true ? InferRow<T>[] : void {
+  execute(): R extends true ? Prettify<NarrowRow<InferRow<T>, K>>[] : void {
     const { sql, params } = this.toSQL();
     try {
       if (this.#returning) {
         const rows = this.#client.prepare(sql).all(...bind(params)) as Record<string, unknown>[];
+        if (Array.isArray(this.#returning)) {
+          return rows.map((r) => decodeSelectedRow(r, this.#table, this.#returning as (keyof InferRow<T>)[])) as unknown as R extends true
+            ? Prettify<NarrowRow<InferRow<T>, K>>[]
+            : never;
+        }
         // SAFETY: decodeRow builds from the table's own column entries
-        return rows.map((r) => decodeRow(r, this.#table)) as R extends true ? InferRow<T>[] : never;
+        return rows.map((r) => decodeRow(r, this.#table)) as unknown as R extends true ? Prettify<NarrowRow<InferRow<T>, K>>[] : never;
       }
       this.#client.prepare(sql).run(...bind(params));
       // SAFETY: R is false here — TS can't narrow conditional return types at runtime
@@ -1466,13 +1489,13 @@ export class UpdateSetBuilder<T extends AnyTable> implements UpdateStage1<T> {
 }
 
 /** Full UPDATE builder — available after `.set()` has been called. */
-export class UpdateBuilder<T extends AnyTable, R extends boolean = false> implements Executable {
+export class UpdateBuilder<T extends AnyTable, R extends boolean = false, K extends keyof InferRow<T> = keyof InferRow<T>> implements Executable {
   #client: DatabaseClient;
   #tableName: string;
   #table: T;
   #set: Partial<InferRow<T>>;
   #conditions: Condition[];
-  #returning: boolean;
+  #returning: boolean | K[];
 
   constructor(
     client: DatabaseClient,
@@ -1480,7 +1503,7 @@ export class UpdateBuilder<T extends AnyTable, R extends boolean = false> implem
     table: T,
     set: Partial<InferRow<T>>,
     conditions: Condition[] = [],
-    returning: R = false as R,
+    returning: boolean | K[] = false,
   ) {
     this.#client = client;
     this.#tableName = tableName;
@@ -1490,22 +1513,26 @@ export class UpdateBuilder<T extends AnyTable, R extends boolean = false> implem
     this.#returning = returning;
   }
 
-  set(partial: Partial<InferRow<T>>): UpdateBuilder<T, R> {
+  set(partial: Partial<InferRow<T>>): UpdateBuilder<T, R, K> {
     return new UpdateBuilder(this.#client, this.#tableName, this.#table, { ...this.#set, ...partial }, this.#conditions, this.#returning);
   }
 
-  where(condition: Condition): UpdateBuilder<T, R> {
+  where(condition: Condition): UpdateBuilder<T, R, K> {
     return new UpdateBuilder(this.#client, this.#tableName, this.#table, this.#set, [...this.#conditions, condition], this.#returning);
   }
 
   /**
    * Return the updated row(s) instead of void.
+   * Pass an array of column names to narrow the result shape.
    *
    * @example
    * db.update(users).set({ name: "Bob" }).where(eq(users.id, "u1")).returning()
+   * db.update(users).set({ name: "Bob" }).where(eq(users.id, "u1")).returning(["id", "name"])
    */
-  returning(): UpdateBuilder<T, true> {
-    return new UpdateBuilder(this.#client, this.#tableName, this.#table, this.#set, this.#conditions, true);
+  returning(): UpdateBuilder<T, true>;
+  returning<NewK extends keyof InferRow<T>>(keys: NewK[]): UpdateBuilder<T, true, NewK>;
+  returning(keys?: (keyof InferRow<T>)[]): UpdateBuilder<T, true, keyof InferRow<T>> {
+    return new UpdateBuilder(this.#client, this.#tableName, this.#table, this.#set, this.#conditions, keys ?? true);
   }
 
   toSQL(): { sql: string; params: unknown[] } {
@@ -1526,17 +1553,29 @@ export class UpdateBuilder<T extends AnyTable, R extends boolean = false> implem
     let sql = `UPDATE ${this.#tableName} SET ${setClauses.join(', ')}`;
     const where = compileConditions(this.#conditions, params);
     if (where !== '1=1') sql += ` WHERE ${where}`;
-    if (this.#returning) sql += ' RETURNING *';
+    if (this.#returning) {
+      if (Array.isArray(this.#returning)) {
+        const cols = this.#returning.map((k) => getCol(this.#table, k as string).name).join(', ');
+        sql += ` RETURNING ${cols}`;
+      } else {
+        sql += ' RETURNING *';
+      }
+    }
     return { sql, params };
   }
 
-  execute(): R extends true ? InferRow<T>[] : void {
+  execute(): R extends true ? Prettify<NarrowRow<InferRow<T>, K>>[] : void {
     const { sql, params } = this.toSQL();
     try {
       if (this.#returning) {
         const rows = this.#client.prepare(sql).all(...bind(params)) as Record<string, unknown>[];
+        if (Array.isArray(this.#returning)) {
+          return rows.map((r) => decodeSelectedRow(r, this.#table, this.#returning as (keyof InferRow<T>)[])) as unknown as R extends true
+            ? Prettify<NarrowRow<InferRow<T>, K>>[]
+            : never;
+        }
         // SAFETY: decodeRow builds from the table's own column entries
-        return rows.map((r) => decodeRow(r, this.#table)) as R extends true ? InferRow<T>[] : never;
+        return rows.map((r) => decodeRow(r, this.#table)) as unknown as R extends true ? Prettify<NarrowRow<InferRow<T>, K>>[] : never;
       }
       this.#client.prepare(sql).run(...bind(params));
       // SAFETY: R is false here — TS can't narrow conditional return types at runtime
@@ -1548,14 +1587,14 @@ export class UpdateBuilder<T extends AnyTable, R extends boolean = false> implem
 }
 
 /** Full DELETE builder — chain `.where()` calls then `.execute()`. */
-export class DeleteBuilder<T extends AnyTable, R extends boolean = false> implements Executable {
+export class DeleteBuilder<T extends AnyTable, R extends boolean = false, K extends keyof InferRow<T> = keyof InferRow<T>> implements Executable {
   #client: DatabaseClient;
   #tableName: string;
   #table: T;
   #conditions: Condition[];
-  #returning: boolean;
+  #returning: boolean | K[];
 
-  constructor(client: DatabaseClient, tableName: string, table: T, conditions: Condition[] = [], returning: R = false as R) {
+  constructor(client: DatabaseClient, tableName: string, table: T, conditions: Condition[] = [], returning: boolean | K[] = false) {
     this.#client = client;
     this.#tableName = tableName;
     this.#table = table;
@@ -1563,18 +1602,22 @@ export class DeleteBuilder<T extends AnyTable, R extends boolean = false> implem
     this.#returning = returning;
   }
 
-  where(condition: Condition): DeleteBuilder<T, R> {
+  where(condition: Condition): DeleteBuilder<T, R, K> {
     return new DeleteBuilder(this.#client, this.#tableName, this.#table, [...this.#conditions, condition], this.#returning);
   }
 
   /**
    * Return the deleted row(s) instead of void.
+   * Pass an array of column names to narrow the result shape.
    *
    * @example
    * db.delete(users).where(eq(users.id, "u1")).returning()
+   * db.delete(users).where(eq(users.id, "u1")).returning(["id", "name"])
    */
-  returning(): DeleteBuilder<T, true> {
-    return new DeleteBuilder(this.#client, this.#tableName, this.#table, this.#conditions, true);
+  returning(): DeleteBuilder<T, true>;
+  returning<NewK extends keyof InferRow<T>>(keys: NewK[]): DeleteBuilder<T, true, NewK>;
+  returning(keys?: (keyof InferRow<T>)[]): DeleteBuilder<T, true, keyof InferRow<T>> {
+    return new DeleteBuilder(this.#client, this.#tableName, this.#table, this.#conditions, keys ?? true);
   }
 
   toSQL(): { sql: string; params: unknown[] } {
@@ -1583,17 +1626,29 @@ export class DeleteBuilder<T extends AnyTable, R extends boolean = false> implem
     let sql = `DELETE FROM ${this.#tableName}`;
     const where = compileConditions(this.#conditions, params);
     if (where !== '1=1') sql += ` WHERE ${where}`;
-    if (this.#returning) sql += ' RETURNING *';
+    if (this.#returning) {
+      if (Array.isArray(this.#returning)) {
+        const cols = this.#returning.map((k) => getCol(this.#table, k as string).name).join(', ');
+        sql += ` RETURNING ${cols}`;
+      } else {
+        sql += ' RETURNING *';
+      }
+    }
     return { sql, params };
   }
 
-  execute(): R extends true ? InferRow<T>[] : void {
+  execute(): R extends true ? Prettify<NarrowRow<InferRow<T>, K>>[] : void {
     const { sql, params } = this.toSQL();
     try {
       if (this.#returning) {
         const rows = this.#client.prepare(sql).all(...bind(params)) as Record<string, unknown>[];
+        if (Array.isArray(this.#returning)) {
+          return rows.map((r) => decodeSelectedRow(r, this.#table, this.#returning as (keyof InferRow<T>)[])) as unknown as R extends true
+            ? Prettify<NarrowRow<InferRow<T>, K>>[]
+            : never;
+        }
         // SAFETY: decodeRow builds from the table's own column entries
-        return rows.map((r) => decodeRow(r, this.#table)) as R extends true ? InferRow<T>[] : never;
+        return rows.map((r) => decodeRow(r, this.#table)) as unknown as R extends true ? Prettify<NarrowRow<InferRow<T>, K>>[] : never;
       }
       this.#client.prepare(sql).run(...bind(params));
       // SAFETY: R is false here — TS can't narrow conditional return types at runtime

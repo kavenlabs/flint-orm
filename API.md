@@ -209,38 +209,41 @@ const results = db.select().from(users).columns(['id', 'name']).where(eq(users.a
 
 ### `db.insert(table).values(row)`
 
-Insert a row. Two-phase: `.values()` is required before `.execute()`.
+Insert one or more rows. Two-phase: `.values()` is required before `.execute()`.
 
 ```ts
-db.insert(users)
-  .values({
-    id: 'u1',
-    name: 'Alice',
-    email: 'alice@example.com',
-  })
-  .execute();
+// Single row
+db.insert(users).values({ id: 'u1', name: 'Alice', email: 'alice@example.com' }).execute();
 // INSERT INTO users (id, name, email) VALUES (?, ?, ?)
+
+// Multiple rows (bulk insert)
+db.insert(users)
+  .values([
+    { id: 'u1', name: 'Alice' },
+    { id: 'u2', name: 'Bob' },
+  ])
+  .execute();
+// INSERT INTO users (id, name) VALUES (?, ?), (?, ?)
 ```
 
 Columns with defaults can be omitted:
 
 ```ts
-db.insert(users)
-  .values({
-    id: 'u1',
-    name: 'Alice',
-    // active defaults to true
-  })
-  .execute();
+db.insert(users).values({ id: 'u1', name: 'Alice' }).execute();
 ```
 
 ### `.returning()`
 
-Return the inserted row(s) instead of void. Adds `RETURNING *` to the SQL.
+Return the inserted row(s) instead of void. Pass an array to narrow which columns are returned.
 
 ```ts
+// Return all columns
 const user = db.insert(users).values({ id: 'u1', name: 'Alice' }).returning().execute();
 // Returns: { id: string; name: string; ... }[]
+
+// Return specific columns
+const user = db.insert(users).values({ id: 'u1', name: 'Alice' }).returning(['id', 'name']).execute();
+// Returns: { id: string; name: string }[]
 ```
 
 ### `.onConflictDoNothing()`
@@ -287,11 +290,16 @@ db.update(users).set({ name: 'Bob' }).set({ email: 'bob@example.com' }).where(eq
 
 ### `.returning()`
 
-Return the updated row(s) instead of void.
+Return the updated row(s) instead of void. Pass an array to narrow which columns are returned.
 
 ```ts
+// Return all columns
 const updated = db.update(users).set({ name: 'Bob' }).where(eq(users.id, 'u1')).returning().execute();
 // Returns: { id: string; name: string; ... }[]
+
+// Return specific columns
+const updated = db.update(users).set({ name: 'Bob' }).where(eq(users.id, 'u1')).returning(['id', 'name']).execute();
+// Returns: { id: string; name: string }[]
 ```
 
 ---
@@ -307,11 +315,16 @@ db.delete(users).where(eq(users.id, 'u1')).execute();
 
 ### `.returning()`
 
-Return the deleted row(s) instead of void.
+Return the deleted row(s) instead of void. Pass an array to narrow which columns are returned.
 
 ```ts
+// Return all columns
 const deleted = db.delete(users).where(eq(users.id, 'u1')).returning().execute();
 // Returns: { id: string; name: string; ... }[]
+
+// Return specific columns
+const deleted = db.delete(users).where(eq(users.id, 'u1')).returning(['id', 'name']).execute();
+// Returns: { id: string; name: string }[]
 ```
 
 ---
