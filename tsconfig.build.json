@@ -1,0 +1,11 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "rootDir": "./src",
+    "declaration": true,
+    "declarationDir": "./dist",
+    "emitDeclarationOnly": true,
+    "noEmit": false
+  },
+  "include": ["src/index.ts", "src/entries/table.ts", "src/entries/expressions.ts"]
+}

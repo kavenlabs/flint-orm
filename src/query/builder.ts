@@ -3,7 +3,7 @@ import type { SQLQueryBindings } from 'bun:sqlite';
 import type { ColumnDef } from '../schema/columns';
 import type { Condition } from './conditions';
 import { compileConditions, eq } from './conditions';
-import type { TableDef, AnyTable, InferRow, InsertRow } from '../schema/table';
+import type { AnyTable, InferRow, InsertRow } from '../schema/table';
 import { FlintValidationError, FlintQueryError } from '../errors';
 
 // -----------------------------------------------------------------------
@@ -1069,7 +1069,7 @@ export class JoinBuilderImpl<
 /** The result type for joined queries. Parent fields are narrowed by `.columns()`; each joined table's data is nested under its table name. */
 export type JoinResult<
   Parent extends AnyTable,
-  Joined extends AnyTable[],
+  _Joined extends AnyTable[],
   ParentCols extends keyof InferRow<Parent> = keyof InferRow<Parent>,
 > = Prettify<Pick<InferRow<Parent>, ParentCols>> & Record<string, unknown>;
 

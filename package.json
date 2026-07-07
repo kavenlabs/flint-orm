@@ -1,8 +1,24 @@
 {
   "name": "flint-orm",
   "type": "module",
-  "module": "src/index.ts",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    },
+    "./table": {
+      "import": "./dist/entries/table.js",
+      "types": "./dist/entries/table.d.ts"
+    },
+    "./expressions": {
+      "import": "./dist/entries/expressions.js",
+      "types": "./dist/entries/expressions.d.ts"
+    }
+  },
   "scripts": {
+    "build": "bun build ./src/index.ts ./src/entries/table.ts ./src/entries/expressions.ts --outdir ./dist --target bun && tsc --project tsconfig.build.json",
     "typecheck": "tsc --noEmit",
     "lint": "oxlint",
     "format": "oxfmt"

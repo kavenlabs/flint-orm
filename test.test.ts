@@ -9,8 +9,6 @@ import { eq, and, isNotNull, like, glob, between, gt, gte, lt, lte, neq } from '
 import { text, boolean, json, integer, date } from '~/schema/columns';
 import { table } from '~/schema/table';
 import { FlintValidationError } from '~/errors';
-import type { InferRow } from '~/schema/table';
-import type { JoinResult } from '~/query/builder';
 
 // ── Schema ─────────────────────────────────────────────────────────────────
 
