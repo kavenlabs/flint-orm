@@ -12,6 +12,50 @@ import { diffSchemas, emptyState } from "./diff.js";
 import { generateSQL } from "./sql.js";
 
 // ---------------------------------------------------------------------------
+// Random word lists for migration folder names
+// ---------------------------------------------------------------------------
+
+const ADJECTIVES = [
+  "amber", "azure", "blank", "brisk", "calm", "clear", "cold", "cool", "crisp", "dark",
+  "deep", "dull", "dusk", "dawn", "fair", "faint", "flat", "foggy", "frost", "glad",
+  "golden", "gray", "green", "gross", "happy", "harsh", "hazy", "keen", "kind", "light",
+  "lively", "long", "loud", "lucky", "mild", "misty", "mossy", "neat", "noble", "odd",
+  "pale", "plain", "proud", "pure", "quick", "quiet", "rare", "raw", "rich", "ripe",
+  "rough", "royal", "rusty", "sharp", "sheer", "shiny", "silent", "silver", "sleek", "slim",
+  "slow", "smooth", "soft", "solid", "sour", "stark", "steep", "stern", "still", "stout",
+  "strict", "swift", "tall", "tame", "thin", "tidy", "tough", "vast", "vivid", "warm",
+  "wild", "wise", "young",
+];
+
+const NOUNS = [
+  "badger", "birch", "bison", "bloom", "brick", "brook", "cedar", "cider", "clay", "cobra",
+  "coral", "crane", "creek", "crow", "deer", "delta", "dune", "eagle", "elm", "ember",
+  "fern", "finch", "flint", "fox", "glacier", "gorse", "granite", "hare", "hawk", "hazel",
+  "heron", "hickory", "hornet", "ivy", "jay", "jasper", "kestrel", "kite", "larch", "lea",
+  "lichen", "linen", "lion", "maple", "marsh", "mink", "moss", "moth", "newt", "oak",
+  "onyx", "otter", "owl", "pearl", "pine", "plume", "quail", "quartz", "rabbit", "rain",
+  "raven", "ridge", "river", "robin", "rose", "sage", "salmon", "scarab", "shale", "silk",
+  "skunk", "slate", "sparrow", "spice", "stone", "storm", "swift", "thorn", "tide", "tile",
+  "toad", "tulip", "vale", "viper", "wasp", "willow", "wren", "yarrow",
+];
+
+// ---------------------------------------------------------------------------
+// Migration folder naming — timestamp + random two words
+// ---------------------------------------------------------------------------
+
+function randomWords(): string {
+  const adj = ADJECTIVES[Math.floor(Math.random() * ADJECTIVES.length)]!;
+  const noun = NOUNS[Math.floor(Math.random() * NOUNS.length)]!;
+  return `${adj}_${noun}`;
+}
+
+function generateFolderName(migrationName: string): string {
+  const timestamp = Math.floor(Date.now() / 1000);
+  const words = randomWords();
+  return `${timestamp}_${words}_${migrationName}`;
+}
+
+// ---------------------------------------------------------------------------
 // Find the latest migration folder and read its state.json
 // ---------------------------------------------------------------------------
 
@@ -20,9 +64,9 @@ function findLatestState(migrationsDir: string): SchemaState | null {
 
   const entries = readdirSync(migrationsDir);
 
-  // Find folders matching the pattern NNN_name
+  // Find folders matching the pattern timestamp_words_name
   const migrationFolders = entries
-    .filter((e) => /^\d{3}_/.test(e))
+    .filter((e) => /^\d{10}_/.test(e))
     .sort()
     .reverse();
 
@@ -34,22 +78,6 @@ function findLatestState(migrationsDir: string): SchemaState | null {
   }
 
   return null;
-}
-
-// ---------------------------------------------------------------------------
-// Find the next migration sequence number
-// ---------------------------------------------------------------------------
-
-function nextSequence(migrationsDir: string): number {
-  if (!existsSync(migrationsDir)) return 1;
-
-  const entries = readdirSync(migrationsDir);
-
-  const numbers = entries
-    .filter((e) => /^\d{3}_/.test(e))
-    .map((e) => parseInt(e.slice(0, 3), 10));
-
-  return numbers.length > 0 ? Math.max(...numbers) + 1 : 1;
 }
 
 // ---------------------------------------------------------------------------
@@ -109,7 +137,6 @@ function serializeTableArg(table: import("./types.js").SerializedTable): string 
 // ---------------------------------------------------------------------------
 
 export interface GenerateResult {
-  sequence: number;
   folderName: string;
   operations: MigrationOperation[];
   sql: string;
@@ -131,8 +158,7 @@ export function generate(
   }
 
   const sql = generateSQL(operations);
-  const sequence = nextSequence(migrationsDir);
-  const folderName = `${String(sequence).padStart(3, "0")}_${migrationName}`;
+  const folderName = generateFolderName(migrationName);
 
   // Write the migration folder
   const migrationDir = join(migrationsDir, folderName);
@@ -167,7 +193,6 @@ ${operationLines}
   writeFileSync(join(migrationDir, "state.json"), JSON.stringify(current, null, 2));
 
   return {
-    sequence,
     folderName,
     operations,
     sql,

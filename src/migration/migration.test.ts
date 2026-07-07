@@ -181,14 +181,14 @@ describe("generate (end-to-end)", () => {
   test("generates first migration from empty state", () => {
     const result = generate([users, orders], TEST_MIGRATIONS_DIR, "init_schema");
 
-    expect(result.sequence).toBe(1);
-    expect(result.folderName).toBe("001_init_schema");
+    // Folder name matches pattern: timestamp_words_init_schema
+    expect(result.folderName).toMatch(/^\d{10}_\w+_\w+_init_schema$/);
     expect(result.operations).toHaveLength(2);
     expect(result.sql).toContain("CREATE TABLE users");
     expect(result.sql).toContain("CREATE TABLE orders");
 
     // Verify folder was created
-    const migrationDir = join(TEST_MIGRATIONS_DIR, "001_init_schema");
+    const migrationDir = join(TEST_MIGRATIONS_DIR, result.folderName);
     expect(existsSync(migrationDir)).toBe(true);
 
     // Verify state.json was created
@@ -201,19 +201,19 @@ describe("generate (end-to-end)", () => {
 
   test("generates second migration with diff", () => {
     // First migration: create tables
-    generate([users, orders], TEST_MIGRATIONS_DIR, "init_schema");
+    const first = generate([users, orders], TEST_MIGRATIONS_DIR, "init_schema");
 
     // Second migration: add email column to users
     const result = generate([usersV2, orders], TEST_MIGRATIONS_DIR, "add_user_email");
 
-    expect(result.sequence).toBe(2);
-    expect(result.folderName).toBe("002_add_user_email");
+    // Folder name matches pattern: timestamp_words_add_user_email
+    expect(result.folderName).toMatch(/^\d{10}_\w+_\w+_add_user_email$/);
     expect(result.operations).toHaveLength(1);
     expect(result.operations[0]!.type).toBe("addColumn");
     expect(result.sql).toContain("ALTER TABLE users ADD COLUMN email TEXT");
 
     // Verify state.json reflects the new schema
-    const statePath = join(TEST_MIGRATIONS_DIR, "002_add_user_email", "state.json");
+    const statePath = join(TEST_MIGRATIONS_DIR, result.folderName, "state.json");
     const state: SchemaState = JSON.parse(readFileSync(statePath, "utf-8"));
     const usersCols = state.tables["users"]!.columns;
     expect(usersCols.map((c) => c.name)).toContain("email");
