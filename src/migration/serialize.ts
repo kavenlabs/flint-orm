@@ -3,14 +3,9 @@
 // representation that can be diffed and stored in state.json.
 // ---------------------------------------------------------------------------
 
-import type { ColumnDef } from "../schema/columns.js";
-import type { AnyTable } from "../schema/table.js";
-import type {
-  SchemaState,
-  SerializedColumn,
-  SerializedIndex,
-  SerializedTable,
-} from "./types.js";
+import type { ColumnDef } from '../schema/columns.js';
+import type { AnyTable } from '../schema/table.js';
+import type { SchemaState, SerializedColumn, SerializedIndex, SerializedTable } from './types.js';
 
 // ---------------------------------------------------------------------------
 // Serialize a single column
@@ -47,9 +42,9 @@ function serializeTable(table: AnyTable): SerializedTable {
   const indexes: SerializedIndex[] = [];
 
   for (const [key, value] of Object.entries(table)) {
-    if (key === "_") continue;
+    if (key === '_') continue;
     // Only process ColumnDef objects (they have __internal)
-    if (value && typeof value === "object" && "__internal" in value) {
+    if (value && typeof value === 'object' && '__internal' in value) {
       columns.push(serializeColumn(value as ColumnDef<any, any>));
     }
   }
@@ -73,9 +68,7 @@ function serializeTable(table: AnyTable): SerializedTable {
 // Public: serialize a full schema
 // ---------------------------------------------------------------------------
 
-export function serializeSchema(
-  tables: AnyTable[],
-): SchemaState {
+export function serializeSchema(tables: AnyTable[]): SchemaState {
   const tableMap: Record<string, SerializedTable> = {};
 
   for (const t of tables) {

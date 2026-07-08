@@ -3,12 +3,12 @@
 // what's been applied in a __flint_migrations table.
 // ---------------------------------------------------------------------------
 
-import { existsSync, readdirSync, readFileSync } from "node:fs";
-import { join } from "node:path";
-import { pathToFileURL } from "node:url";
-import type { Database, SQLQueryBindings } from "bun:sqlite";
-import type { MigrationFile } from "./types.js";
-import { generateSQL } from "./sql.js";
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { pathToFileURL } from 'node:url';
+import type { Database, SQLQueryBindings } from 'bun:sqlite';
+import type { MigrationFile } from './types.js';
+import { generateSQL } from './sql.js';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -32,7 +32,7 @@ export interface MigrateResult {
 // Migration tracking table
 // ---------------------------------------------------------------------------
 
-const TRACKING_TABLE = "__flint_migrations";
+const TRACKING_TABLE = '__flint_migrations';
 
 function ensureTrackingTable(client: Database): void {
   client.run(`
@@ -70,13 +70,11 @@ function discoverMigrations(migrationsDir: string): MigrationEntry[] {
   if (!existsSync(migrationsDir)) return [];
 
   const entries = readdirSync(migrationsDir);
-  const migrationFolders = entries
-    .filter((e) => /^\d{10}_/.test(e))
-    .sort(); // Chronological order
+  const migrationFolders = entries.filter((e) => /^\d{10}_/.test(e)).sort(); // Chronological order
 
   return migrationFolders.map((folder) => {
     // Extract name: everything after the timestamp prefix
-    const name = folder.replace(/^\d{10}_/, "");
+    const name = folder.replace(/^\d{10}_/, '');
     return {
       folderName: folder,
       name,
@@ -86,7 +84,7 @@ function discoverMigrations(migrationsDir: string): MigrationEntry[] {
 }
 
 async function loadMigration(entry: MigrationEntry): Promise<MigrationFile> {
-  const migrationPath = join(entry.path, "migration.ts");
+  const migrationPath = join(entry.path, 'migration.ts');
   if (!existsSync(migrationPath)) {
     throw new Error(`Migration file not found: ${migrationPath}`);
   }
@@ -124,10 +122,7 @@ async function loadMigration(entry: MigrationEntry): Promise<MigrationFile> {
  * const result = migrate(client, { migrationsDir: "./flint" });
  * console.log(`Applied: ${result.applied.join(", ")}`);
  */
-export async function migrate(
-  client: Database,
-  options: MigrateOptions,
-): Promise<MigrateResult> {
+export async function migrate(client: Database, options: MigrateOptions): Promise<MigrateResult> {
   const { migrationsDir, dryRun = false } = options;
 
   // Ensure tracking table exists (skip for dry runs)
@@ -164,7 +159,7 @@ export async function migrate(
 
     // Split SQL by semicolons and execute each statement
     const statements = sql
-      .split(";")
+      .split(';')
       .map((s) => s.trim())
       .filter((s) => s.length > 0);
 
@@ -204,20 +199,13 @@ export interface MigrationStatus {
  * @param migrationsDir - Path to the migrations directory
  * @returns Status object with applied and pending migrations
  */
-export function getMigrationStatus(
-  client: Database,
-  migrationsDir: string,
-): MigrationStatus {
+export function getMigrationStatus(client: Database, migrationsDir: string): MigrationStatus {
   ensureTrackingTable(client);
   const appliedNames = getAppliedMigrations(client);
   const allMigrations = discoverMigrations(migrationsDir);
 
   return {
-    applied: allMigrations
-      .filter((m) => appliedNames.has(m.folderName))
-      .map((m) => ({ name: m.name, folderName: m.folderName })),
-    pending: allMigrations
-      .filter((m) => !appliedNames.has(m.folderName))
-      .map((m) => ({ name: m.name, folderName: m.folderName })),
+    applied: allMigrations.filter((m) => appliedNames.has(m.folderName)).map((m) => ({ name: m.name, folderName: m.folderName })),
+    pending: allMigrations.filter((m) => !appliedNames.has(m.folderName)).map((m) => ({ name: m.name, folderName: m.folderName })),
   };
 }

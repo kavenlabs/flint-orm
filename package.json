@@ -1,18 +1,17 @@
 {
   "name": "flint-orm",
   "version": "0.1.0",
-  "main": "./dist/index.js",
   "bin": {
     "flint": "./src/cli.ts"
   },
-  "devDependencies": {
-    "@types/bun": "1.3.14",
-    "oxfmt": "0.57.0",
-    "oxlint": "1.72.0"
-  },
-  "peerDependencies": {
-    "typescript": "7.0.1-rc"
-  },
+  "files": [
+    "dist",
+    "API.md",
+    "README.md"
+  ],
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
   "exports": {
     ".": {
       "import": "./dist/index.js",
@@ -35,17 +34,18 @@
       "types": "./dist/src/migration/index.d.ts"
     }
   },
-  "files": [
-    "dist",
-    "API.md",
-    "README.md"
-  ],
   "scripts": {
     "build": "bun build ./src/index.ts ./src/entries/table.ts ./src/entries/expressions.ts ./src/entries/config.ts --outdir ./dist --target bun && tsc --project tsconfig.build.json",
     "typecheck": "tsc --noEmit",
     "lint": "oxlint",
     "format": "oxfmt"
   },
-  "type": "module",
-  "types": "./dist/index.d.ts"
+  "devDependencies": {
+    "@types/bun": "1.3.14",
+    "oxfmt": "0.57.0",
+    "oxlint": "1.72.0"
+  },
+  "peerDependencies": {
+    "typescript": "7.0.1-rc"
+  }
 }

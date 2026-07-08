@@ -5,7 +5,7 @@
 /** Serialized column definition — what lives in state.json. */
 export interface SerializedColumn {
   name: string;
-  sqlType: "text" | "integer" | "real" | "blob";
+  sqlType: 'text' | 'integer' | 'real' | 'blob';
   isPrimaryKey: boolean;
   isNotNull: boolean;
   isUnique: boolean;
@@ -40,60 +40,52 @@ export interface SchemaState {
 // ---------------------------------------------------------------------------
 
 export interface AddTableOp {
-  type: "addTable";
+  type: 'addTable';
   table: SerializedTable;
 }
 
 export interface DropTableOp {
-  type: "dropTable";
+  type: 'dropTable';
   tableName: string;
 }
 
 export interface RenameTableOp {
-  type: "renameTable";
+  type: 'renameTable';
   from: string;
   to: string;
 }
 
 export interface AddColumnOp {
-  type: "addColumn";
+  type: 'addColumn';
   tableName: string;
   column: SerializedColumn;
 }
 
 export interface DropColumnOp {
-  type: "dropColumn";
+  type: 'dropColumn';
   tableName: string;
   columnName: string;
 }
 
 export interface RenameColumnOp {
-  type: "renameColumn";
+  type: 'renameColumn';
   tableName: string;
   from: string;
   to: string;
 }
 
 export interface CreateIndexOp {
-  type: "createIndex";
+  type: 'createIndex';
   tableName: string;
   index: SerializedIndex;
 }
 
 export interface DropIndexOp {
-  type: "dropIndex";
+  type: 'dropIndex';
   indexName: string;
 }
 
-export type MigrationOperation =
-  | AddTableOp
-  | DropTableOp
-  | RenameTableOp
-  | AddColumnOp
-  | DropColumnOp
-  | RenameColumnOp
-  | CreateIndexOp
-  | DropIndexOp;
+export type MigrationOperation = AddTableOp | DropTableOp | RenameTableOp | AddColumnOp | DropColumnOp | RenameColumnOp | CreateIndexOp | DropIndexOp;
 
 // ---------------------------------------------------------------------------
 // Migration file shape

@@ -3,12 +3,9 @@
 // what operations a migration performs.
 // ---------------------------------------------------------------------------
 
-import type { MigrationFile, MigrationOperation } from "./types.js";
+import type { MigrationFile, MigrationOperation } from './types.js';
 
-export function defineMigration(config: {
-  name: string;
-  operations: MigrationOperation[];
-}): MigrationFile {
+export function defineMigration(config: { name: string; operations: MigrationOperation[] }): MigrationFile {
   return {
     name: config.name,
     operations: config.operations,

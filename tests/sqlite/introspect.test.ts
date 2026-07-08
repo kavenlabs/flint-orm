@@ -1,11 +1,11 @@
-import { describe, test, expect, beforeAll, afterAll } from "bun:test";
-import { Database } from "bun:sqlite";
-import { introspect } from "../../src/sqlite/introspect.js";
+import { describe, test, expect, beforeAll, afterAll } from 'bun:test';
+import { Database } from 'bun:sqlite';
+import { introspect } from '../../src/sqlite/introspect.js';
 
 let db: Database;
 
 beforeAll(() => {
-  db = new Database(":memory:");
+  db = new Database(':memory:');
 
   db.exec(`
     CREATE TABLE users (
@@ -31,68 +31,68 @@ afterAll(() => {
   db.close();
 });
 
-describe("introspect", () => {
-  test("discovers all tables", () => {
+describe('introspect', () => {
+  test('discovers all tables', () => {
     const schema = introspect(db);
 
-    expect(Object.keys(schema.tables)).toContain("users");
-    expect(Object.keys(schema.tables)).toContain("posts");
+    expect(Object.keys(schema.tables)).toContain('users');
+    expect(Object.keys(schema.tables)).toContain('posts');
   });
 
-  test("discovers columns with correct types", () => {
+  test('discovers columns with correct types', () => {
     const schema = introspect(db);
-    const users = schema.tables["users"]!;
+    const users = schema.tables['users']!;
 
-    const id = users.columns.find((c) => c.name === "id")!;
-    expect(id.sqlType).toBe("text");
+    const id = users.columns.find((c) => c.name === 'id')!;
+    expect(id.sqlType).toBe('text');
     expect(id.isPrimaryKey).toBe(true);
 
-    const name = users.columns.find((c) => c.name === "name")!;
-    expect(name.sqlType).toBe("text");
+    const name = users.columns.find((c) => c.name === 'name')!;
+    expect(name.sqlType).toBe('text');
     expect(name.isNotNull).toBe(true);
   });
 
-  test("discovers auto-increment columns", () => {
+  test('discovers auto-increment columns', () => {
     const schema = introspect(db);
-    const posts = schema.tables["posts"]!;
+    const posts = schema.tables['posts']!;
 
-    const id = posts.columns.find((c) => c.name === "id")!;
-    expect(id.sqlType).toBe("integer");
+    const id = posts.columns.find((c) => c.name === 'id')!;
+    expect(id.sqlType).toBe('integer');
     expect(id.isPrimaryKey).toBe(true);
   });
 
-  test("discovers foreign keys as column references", () => {
+  test('discovers foreign keys as column references', () => {
     const schema = introspect(db);
-    const posts = schema.tables["posts"]!;
+    const posts = schema.tables['posts']!;
 
-    const userId = posts.columns.find((c) => c.name === "user_id")!;
-    expect(userId.referencesTable).toBe("users");
-    expect(userId.referencesColumn).toBe("id");
+    const userId = posts.columns.find((c) => c.name === 'user_id')!;
+    expect(userId.referencesTable).toBe('users');
+    expect(userId.referencesColumn).toBe('id');
   });
 
-  test("discovers indexes", () => {
+  test('discovers indexes', () => {
     const schema = introspect(db);
-    const posts = schema.tables["posts"]!;
+    const posts = schema.tables['posts']!;
 
     expect(posts.indexes.length).toBeGreaterThanOrEqual(1);
-    const idx = posts.indexes.find((i) => i.name === "idx_posts_user_id")!;
-    expect(idx.columns).toContain("user_id");
+    const idx = posts.indexes.find((i) => i.name === 'idx_posts_user_id')!;
+    expect(idx.columns).toContain('user_id');
     expect(idx.unique).toBe(false);
   });
 
-  test("discovers unique indexes", () => {
+  test('discovers unique indexes', () => {
     const schema = introspect(db);
-    const users = schema.tables["users"]!;
+    const users = schema.tables['users']!;
 
-    const idx = users.indexes.find((i) => i.name === "idx_users_email")!;
+    const idx = users.indexes.find((i) => i.name === 'idx_users_email')!;
     expect(idx.unique).toBe(true);
   });
 
-  test("discovers unique columns", () => {
+  test('discovers unique columns', () => {
     const schema = introspect(db);
-    const users = schema.tables["users"]!;
+    const users = schema.tables['users']!;
 
-    const email = users.columns.find((c) => c.name === "email")!;
+    const email = users.columns.find((c) => c.name === 'email')!;
     expect(email.isUnique).toBe(true);
   });
 });

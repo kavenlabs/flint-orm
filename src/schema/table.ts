@@ -101,9 +101,7 @@ export function table<T extends Record<string, ColumnDef<any, any>>>(
     const raw = indexFn(result);
     if (raw.length > 0) {
       const tableObj = result as Record<string, unknown>;
-      tableObj.__indexes = raw.map((item) =>
-        (item as IndexBuilderInternal).build(),
-      );
+      tableObj.__indexes = raw.map((item) => (item as IndexBuilderInternal).build());
     }
   }
 
