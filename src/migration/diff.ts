@@ -9,6 +9,46 @@ import type {
   SerializedColumn,
   SerializedTable,
 } from "./types.js";
+
+// ---------------------------------------------------------------------------
+// Topological sort — orders tables by FK dependency (independent → dependent).
+// ---------------------------------------------------------------------------
+
+function topologicalSort(tables: SerializedTable[]): SerializedTable[] {
+  const deps = new Map<string, Set<string>>();
+  for (const table of tables) {
+    const tableDeps = new Set<string>();
+    for (const col of table.columns) {
+      if (col.referencesTable && col.referencesTable !== table.name) {
+        tableDeps.add(col.referencesTable);
+      }
+    }
+    deps.set(table.name, tableDeps);
+  }
+
+  const tableByName = new Map(tables.map((t) => [t.name, t]));
+  const remaining = new Set(tables.map((t) => t.name));
+  const sorted: SerializedTable[] = [];
+
+  while (remaining.size > 0) {
+    const ready = [...remaining].filter((name) => {
+      const d = deps.get(name)!;
+      return [...d].every((dep) => !remaining.has(dep));
+    });
+
+    if (ready.length === 0) {
+      const cycle = [...remaining].join(", ");
+      throw new Error(`Circular foreign key dependency detected: ${cycle}`);
+    }
+
+    for (const name of ready) {
+      sorted.push(tableByName.get(name)!);
+      remaining.delete(name);
+    }
+  }
+
+  return sorted;
+}
 import {
   addTable,
   dropTable,
@@ -101,18 +141,22 @@ export function diffSchemas(
   const prevTables = new Map(Object.entries(previous.tables));
   const currTables = new Map(Object.entries(current.tables));
 
-  // Tables in current but not in previous → added
-  for (const [name, table] of currTables) {
-    if (!prevTables.has(name)) {
-      ops.push(addTable(table));
-    }
+  // Tables in current but not in previous → added (topologically sorted)
+  const addedTables = [...currTables.entries()]
+    .filter(([name]) => !prevTables.has(name))
+    .map(([, table]) => table);
+  const sortedAdded = topologicalSort(addedTables);
+  for (const table of sortedAdded) {
+    ops.push(addTable(table));
   }
 
-  // Tables in previous but not in current → dropped
-  for (const [name] of prevTables) {
-    if (!currTables.has(name)) {
-      ops.push(dropTable(name));
-    }
+  // Tables in previous but not in current → dropped (reverse topological order)
+  const droppedTables = [...prevTables.entries()]
+    .filter(([name]) => !currTables.has(name))
+    .map(([, table]) => table);
+  const sortedDropped = topologicalSort(droppedTables).reverse();
+  for (const table of sortedDropped) {
+    ops.push(dropTable(table.name));
   }
 
   // Tables in both → diff their contents

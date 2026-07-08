@@ -19,7 +19,7 @@ import type {
 function serializeColumn(col: ColumnDef<any, any>): SerializedColumn {
   const internal = col.__internal;
 
-  return {
+  const result: SerializedColumn = {
     name: col.name,
     sqlType: internal.sqlType,
     isPrimaryKey: internal.isPrimaryKey,
@@ -28,6 +28,13 @@ function serializeColumn(col: ColumnDef<any, any>): SerializedColumn {
     hasDefault: internal.hasDefault,
     defaultValue: internal.defaultValue,
   };
+
+  if (internal.referencesTable && internal.referencesColumn) {
+    result.referencesTable = internal.referencesTable;
+    result.referencesColumn = internal.referencesColumn;
+  }
+
+  return result;
 }
 
 // ---------------------------------------------------------------------------

@@ -11,6 +11,8 @@ export interface SerializedColumn {
   isUnique: boolean;
   hasDefault: boolean;
   defaultValue?: unknown;
+  referencesTable?: string;
+  referencesColumn?: string;
 }
 
 /** Serialized table definition — what lives in state.json. */

@@ -40,6 +40,10 @@ function columnToDDL(col: SerializedColumn): string {
     }
   }
 
+  if (col.referencesTable && col.referencesColumn) {
+    parts.push(`REFERENCES ${col.referencesTable}(${col.referencesColumn})`);
+  }
+
   return parts.join(" ");
 }
 

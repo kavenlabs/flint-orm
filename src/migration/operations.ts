@@ -17,8 +17,8 @@ import type {
   SerializedTable,
 } from "./types.js";
 
-export function addTable(table: SerializedTable): AddTableOp {
-  return { type: "addTable", table };
+export function addTable(table: Omit<SerializedTable, "indexes"> & { indexes?: SerializedIndex[] }): AddTableOp {
+  return { type: "addTable", table: { ...table, indexes: table.indexes ?? [] } };
 }
 
 export function dropTable(tableName: string): DropTableOp {
