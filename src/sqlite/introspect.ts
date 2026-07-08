@@ -122,11 +122,12 @@ function introspectColumns(
     fkMap.set(fk.from, { referencesTable: fk.table, referencesColumn: fk.to });
   }
 
-  // Build set of columns with UNIQUE constraint (from sqlite_autoindex_ with origin "c")
+  // Build set of columns with UNIQUE constraint
+  // Check both autoindexes (origin "u" for UNIQUE constraint) and explicit indexes (origin "c" for CREATE INDEX)
   const uniqueColumns = new Set<string>();
   for (const idx of indexRows) {
-    if (idx.name.startsWith("sqlite_autoindex_") && idx.unique === 1 && idx.origin === "c") {
-      // This is a UNIQUE constraint autoindex — get the column name
+    if (idx.unique === 1 && (idx.origin === "u" || idx.origin === "c")) {
+      // Get the column name for this unique index
       const colInfo = client.query(`PRAGMA index_info('${idx.name}')`).all() as { name: string }[];
       if (colInfo.length === 1) {
         uniqueColumns.add(colInfo[0]!.name);

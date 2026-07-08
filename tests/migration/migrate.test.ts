@@ -1,16 +1,8 @@
-// ---------------------------------------------------------------------------
-// Tests for migration runner
-// ---------------------------------------------------------------------------
-
-import { test, expect, describe, beforeEach, afterEach } from "bun:test";
+import { describe, test, expect, beforeEach, afterEach } from "bun:test";
 import { Database } from "bun:sqlite";
 import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { migrate, getMigrationStatus } from "./migrate.js";
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
+import { migrate, getMigrationStatus } from "../../src/migration/migrate.js";
 
 const TEST_MIGRATIONS_DIR = join(import.meta.dir, "../../test-migrate-temp");
 
@@ -20,19 +12,24 @@ function cleanup() {
   }
 }
 
-// Simple migration that creates a users table
-function createUsersMigration(timestamp: number, name = "init_users") {
+function createMigration(timestamp: number, name: string, content: string) {
   const folderName = `${timestamp}_${name}`;
   const dir = join(TEST_MIGRATIONS_DIR, folderName);
   mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, "migration.ts"), content);
+  return folderName;
+}
 
-  // Use relative imports so dynamic import works in tests
-  const content = `
+function createUsersMigration(timestamp: number) {
+  return createMigration(
+    timestamp,
+    "init_users",
+    `
 import { defineMigration } from "../../src/migration/migration.js";
 import { addTable } from "../../src/migration/operations.js";
 
 export default defineMigration({
-  name: "${name}",
+  name: "init_users",
   operations: [
     addTable({
       name: "users",
@@ -44,23 +41,20 @@ export default defineMigration({
     }),
   ],
 });
-`;
-  writeFileSync(join(dir, "migration.ts"), content);
-  return folderName;
+`
+  );
 }
 
-// Migration that adds an email column
-function createEmailMigration(timestamp: number, name = "add_email") {
-  const folderName = `${timestamp}_${name}`;
-  const dir = join(TEST_MIGRATIONS_DIR, folderName);
-  mkdirSync(dir, { recursive: true });
-
-  const content = `
+function createEmailMigration(timestamp: number) {
+  return createMigration(
+    timestamp,
+    "add_email",
+    `
 import { defineMigration } from "../../src/migration/migration.js";
 import { addColumn } from "../../src/migration/operations.js";
 
 export default defineMigration({
-  name: "${name}",
+  name: "add_email",
   operations: [
     addColumn("users", {
       name: "email",
@@ -72,14 +66,9 @@ export default defineMigration({
     }),
   ],
 });
-`;
-  writeFileSync(join(dir, "migration.ts"), content);
-  return folderName;
+`
+  );
 }
-
-// ---------------------------------------------------------------------------
-// Tests
-// ---------------------------------------------------------------------------
 
 describe("migrate", () => {
   let db: Database;
@@ -96,29 +85,21 @@ describe("migrate", () => {
   });
 
   test("applies pending migrations in order", async () => {
-    createUsersMigration(1000000001, "init_users");
-    createEmailMigration(1000000002, "add_email");
+    createUsersMigration(1000000001);
+    createEmailMigration(1000000002);
 
     const result = await migrate(db, { migrationsDir: TEST_MIGRATIONS_DIR });
 
     expect(result.applied).toEqual(["1000000001_init_users", "1000000002_add_email"]);
     expect(result.skipped).toEqual([]);
-
-    // Verify tables were created
-    const tables = db.query("SELECT name FROM sqlite_master WHERE type='table' AND name != 'sqlite_sequence'").all() as { name: string }[];
-    const tableNames = tables.map((t) => t.name).sort();
-    expect(tableNames).toContain("users");
-    expect(tableNames).toContain("__flint_migrations");
   });
 
   test("skips already-applied migrations", async () => {
-    createUsersMigration(1000000001, "init_users");
-    createEmailMigration(1000000002, "add_email");
+    createUsersMigration(1000000001);
+    createEmailMigration(1000000002);
 
-    // Apply first migration
     await migrate(db, { migrationsDir: TEST_MIGRATIONS_DIR });
 
-    // Apply again — should skip both
     const result = await migrate(db, { migrationsDir: TEST_MIGRATIONS_DIR });
 
     expect(result.applied).toEqual([]);
@@ -126,15 +107,12 @@ describe("migrate", () => {
   });
 
   test("applies only new migrations on second run", async () => {
-    createUsersMigration(1000000001, "init_users");
+    createUsersMigration(1000000001);
 
-    // First run
     await migrate(db, { migrationsDir: TEST_MIGRATIONS_DIR });
 
-    // Add second migration
-    createEmailMigration(1000000002, "add_email");
+    createEmailMigration(1000000002);
 
-    // Second run — should only apply add_email
     const result = await migrate(db, { migrationsDir: TEST_MIGRATIONS_DIR });
 
     expect(result.applied).toEqual(["1000000002_add_email"]);
@@ -142,8 +120,8 @@ describe("migrate", () => {
   });
 
   test("dry run returns pending without executing", async () => {
-    createUsersMigration(1000000001, "init_users");
-    createEmailMigration(1000000002, "add_email");
+    createUsersMigration(1000000001);
+    createEmailMigration(1000000002);
 
     const result = await migrate(db, {
       migrationsDir: TEST_MIGRATIONS_DIR,
@@ -153,13 +131,12 @@ describe("migrate", () => {
     expect(result.applied).toEqual(["1000000001_init_users", "1000000002_add_email"]);
     expect(result.skipped).toEqual([]);
 
-    // Verify no tables were created (except maybe sqlite_sequence)
     const tables = db.query("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'").all() as { name: string }[];
     expect(tables).toHaveLength(0);
   });
 
   test("records applied migrations in tracking table", async () => {
-    createUsersMigration(1000000001, "init_users");
+    createUsersMigration(1000000001);
 
     await migrate(db, { migrationsDir: TEST_MIGRATIONS_DIR });
 
@@ -170,7 +147,6 @@ describe("migrate", () => {
 
     expect(rows).toHaveLength(1);
     expect(rows[0]!.name).toBe("1000000001_init_users");
-    expect(typeof rows[0]!.applied_at).toBe("number");
     expect(rows[0]!.applied_at).toBeGreaterThan(0);
   });
 
@@ -189,11 +165,10 @@ describe("migrate", () => {
   });
 
   test("migration SQL creates correct schema", async () => {
-    createUsersMigration(1000000001, "init_users");
+    createUsersMigration(1000000001);
 
     await migrate(db, { migrationsDir: TEST_MIGRATIONS_DIR });
 
-    // Verify the users table schema
     const columns = db.query("PRAGMA table_info('users')").all() as { name: string; type: string }[];
     const colNames = columns.map((c) => c.name);
     expect(colNames).toContain("id");
@@ -201,29 +176,46 @@ describe("migrate", () => {
   });
 
   test("applies migrations in chronological order", async () => {
-    // Create out of order — migration runner should sort by folder name
-    createEmailMigration(1000000002, "add_email");
-    createUsersMigration(1000000001, "init_users");
+    createEmailMigration(1000000002);
+    createUsersMigration(1000000001);
 
     const result = await migrate(db, { migrationsDir: TEST_MIGRATIONS_DIR });
 
-    // Should apply in chronological order despite creation order
     expect(result.applied).toEqual(["1000000001_init_users", "1000000002_add_email"]);
   });
+});
 
-  test("getMigrationStatus returns correct status", async () => {
-    createUsersMigration(1000000001, "init_users");
-    createEmailMigration(1000000002, "add_email");
+describe("getMigrationStatus", () => {
+  let db: Database;
 
-    // Before any migrations
-    let status = getMigrationStatus(db, TEST_MIGRATIONS_DIR);
+  beforeEach(() => {
+    cleanup();
+    mkdirSync(TEST_MIGRATIONS_DIR, { recursive: true });
+    db = new Database(":memory:");
+  });
+
+  afterEach(() => {
+    db.close();
+    cleanup();
+  });
+
+  test("returns empty status before any migrations", () => {
+    createUsersMigration(1000000001);
+
+    const status = getMigrationStatus(db, TEST_MIGRATIONS_DIR);
+
     expect(status.applied).toEqual([]);
-    expect(status.pending).toHaveLength(2);
+    expect(status.pending).toHaveLength(1);
+  });
 
-    // Apply all pending migrations
+  test("returns correct status after migrations", async () => {
+    createUsersMigration(1000000001);
+    createEmailMigration(1000000002);
+
     await migrate(db, { migrationsDir: TEST_MIGRATIONS_DIR });
 
-    status = getMigrationStatus(db, TEST_MIGRATIONS_DIR);
+    const status = getMigrationStatus(db, TEST_MIGRATIONS_DIR);
+
     expect(status.applied).toHaveLength(2);
     expect(status.pending).toHaveLength(0);
   });
