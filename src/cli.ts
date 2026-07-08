@@ -7,6 +7,8 @@ import { parseArgs } from "node:util";
 import { statSync, readdirSync, existsSync, readFileSync } from "node:fs";
 import { join, resolve, isAbsolute } from "node:path";
 import { pathToFileURL } from "node:url";
+import type { AnyTable, TableDef } from "./schema/table.js";
+import type { SchemaState } from "./migration/types.js";
 
 // ---------------------------------------------------------------------------
 // Config loading
@@ -116,7 +118,7 @@ async function cmdGenerate(
 
     // Find latest state
     const migrationsDir = resolve(process.cwd(), config.migrations ?? "./flint");
-    let previousState: ReturnType<typeof emptyState> = null as any;
+    let previousState: SchemaState | null = null;
     if (existsSync(migrationsDir)) {
       const folders = readdirSync(migrationsDir).filter((e) => /^\d{10}_/.test(e)).sort().reverse();
       for (const folder of folders) {
@@ -129,7 +131,7 @@ async function cmdGenerate(
     }
     if (!previousState) previousState = emptyState();
 
-    const currentState = serializeSchema(tables as any[]);
+    const currentState = serializeSchema(tables as AnyTable[]);
     const operations = diffSchemas(previousState, currentState);
 
     if (operations.length === 0) {
@@ -151,7 +153,7 @@ async function cmdGenerate(
   const { generate } = await import("./migration/generate.js");
 
   try {
-    const result = generate(tables as any[], resolve(process.cwd(), (config.migrations ?? "./flint") as string), name);
+    const result = generate(tables as TableDef<any>[], resolve(process.cwd(), (config.migrations ?? "./flint") as string), name);
     console.log(`\n✅ Migration generated: ${result.folderName}`);
     console.log(`   Operations: ${result.operations.length}`);
     console.log(`\n--- SQL Preview ---\n${result.sql}`);
