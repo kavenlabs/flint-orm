@@ -33,12 +33,12 @@ const user = db.select().from(users).where(eq(users.id, 'u1')).single().execute(
 
 ## Schema
 
-### `table(name, columns)`
+### `table(name, columns, indexFn?)`
 
 Define a table. Columns live as direct properties. SQL metadata is under `._`.
 
 ```ts
-import { table, text, integer, boolean } from 'flint-orm';
+import { table, text, integer, boolean, index } from 'flint-orm';
 
 const users = table('users', {
   id: text('id').primaryKey(),
@@ -49,7 +49,7 @@ const users = table('users', {
 });
 ```
 
-### `snakeCase.table(name, columns)`
+### `snakeCase.table(name, columns, indexFn?)`
 
 Auto-converts camelCase keys to snake_case SQL names.
 
@@ -119,6 +119,28 @@ Row type for INSERT. Columns with defaults or autoIncrement are optional.
 type UserInsert = InsertRow<typeof users>;
 // { id: string; name: string; email?: string; active?: boolean; age?: number }
 ```
+
+---
+
+## Indexes
+
+### `index(name).on(columns).unique()`
+
+Define indexes via the table callback. Chainable API.
+
+```ts
+const users = table('users', {
+  id: text('id').primaryKey(),
+  email: text('email'),
+  name: text('name'),
+}, (t) => [
+  index('idx_users_email').on(t.email).unique(),
+  index('idx_users_name').on(t.name),
+  index('idx_users_email_name').on(t.email, t.name),
+]);
+```
+
+The callback receives the table definition and returns an array of `IndexBuilder` objects. Indexes are attached to the table automatically and serialized for migrations.
 
 ---
 
@@ -333,7 +355,7 @@ const deleted = db.delete(users).where(eq(users.id, 'u1')).returning(['id', 'nam
 
 ### `db.leftJoin(parent).on(child, condition?)`
 
-LEFT JOIN. Returns all parent rows, with matching child data or null.
+LEFT JOIN. Returns all parent rows, with matching child data nested under `__children`.
 
 ```ts
 const orders = table('orders', {
@@ -367,7 +389,7 @@ Joins return **nested** results, not flat-merged:
   {
     id: 'u1',
     name: 'Alice',
-    orders: [
+    __children: [
       { id: 'o1', userId: 'u1', total: 100 },
       { id: 'o2', userId: 'u1', total: 200 },
     ],
@@ -381,14 +403,23 @@ Narrow parent columns with `.columns()`:
 
 ```ts
 db.leftJoin(orders).on(users, eq(orders.userId, users.id)).columns(['id', 'name']).execute();
-// Returns: { id: string; name: string; orders: OrderRow[] }[]
+// Returns: { id: string; name: string; __children: OrderRow[] }[]
 ```
 
 ### `.single()` on Joins
 
 ```ts
 db.leftJoin(orders).on(users, eq(orders.userId, users.id)).single().execute();
-// Returns: { id: string; name: string; orders: OrderRow[] } | null
+// Returns: { id: string; name: string; __children: OrderRow[] } | null
+```
+
+### Multi-Join
+
+Chain multiple joins:
+
+```ts
+db.leftJoin(orders).on(users).leftJoin(orderItems).on(orders).execute();
+// Returns nested: { ...userFields, __children: [{ ...orderFields, __children: [...items] }] }
 ```
 
 ---
@@ -548,7 +579,10 @@ import { flint, table, text, eq } from 'flint-orm';
 
 const db = flint({ url: 'app.db' });
 
-db.batch([db.insert(orders).values({ id: 'o1', userId: 'u1', total: 100 }), db.update(users).set({ totalOrders: 1 }).where(eq(users.id, 'u1'))]);
+db.batch([
+  db.insert(orders).values({ id: 'o1', userId: 'u1', total: 100 }),
+  db.update(users).set({ totalOrders: 1 }).where(eq(users.id, 'u1')),
+]);
 ```
 
 All queries succeed or all roll back.
@@ -557,14 +591,21 @@ All queries succeed or all roll back.
 
 ## Raw SQL
 
-Access the underlying `bun:sqlite` client directly for raw queries.
+### `db.$run(sql, ...params)`
+
+Execute raw SQL directly against the database.
 
 ```ts
-// Simple query
-const users = db.$client.prepare('SELECT * FROM users WHERE id = ?').all('u1');
+db.$run('CREATE TABLE test (id INTEGER PRIMARY KEY, name TEXT)');
+db.$run('INSERT INTO test VALUES (?, ?)', 1, 'Alice');
+```
 
-// With type annotation
-const rows = db.$client.prepare('SELECT count(*) as cnt FROM users').all() as { cnt: number }[];
+### `db.$client`
+
+Direct access to the underlying `bun:sqlite` client.
+
+```ts
+const rows = db.$client.prepare('SELECT * FROM users WHERE id = ?').all('u1');
 ```
 
 ---
@@ -579,19 +620,145 @@ import { sql } from 'flint-orm';
 const expr = sql`SELECT * FROM users WHERE name = ${'Alice'} AND age > ${18}`;
 // { sql: "SELECT * FROM users WHERE name = ? AND age > ?", params: ["Alice", 18] }
 
-// Execute with db.$client
+// Use with db.$client
 const rows = db.$client.prepare(expr.sql).all(...expr.params);
 ```
 
 ---
 
-## Escape Hatch
+## Migration System
 
-Access the underlying `bun:sqlite` client directly.
+### `flint generate` (CLI)
+
+Generate a migration from schema changes.
+
+```bash
+# Generate migration
+flint generate --name init_schema
+
+# Preview SQL without writing files
+flint generate --name init_schema --preview
+```
+
+### `flint migrate` (CLI)
+
+Apply pending migrations to the database.
+
+```bash
+# Apply all pending migrations
+flint migrate
+
+# Show which migrations are pending/applied
+flint migrate --status
+```
+
+### Config
+
+Create `flint.config.ts` in your project root:
 
 ```ts
-db.$client; // Database instance
+import { defineConfig } from 'flint-orm/config';
+
+export default defineConfig({
+  schema: './src/schema', // folder or file with table() definitions
+  migrations: './flint',  // where migration folders are stored
+  database: {
+    url: './app.db',      // SQLite database path
+  },
+});
 ```
+
+### Programmatic API
+
+```ts
+import { generate, migrate, getMigrationStatus, serializeSchema, diffSchemas, generateSQL } from 'flint-orm/migration';
+
+// Serialize table definitions to JSON
+const state = serializeSchema([users, orders]);
+
+// Diff two schema states
+const operations = diffSchemas(previousState, currentState);
+
+// Generate SQL from operations
+const sql = generateSQL(operations);
+
+// Generate a migration folder
+const result = generate([users, orders], './flint', 'init_schema');
+
+// Apply pending migrations
+const result = migrate({ url: './app.db' }, './flint');
+
+// Check migration status
+const status = getMigrationStatus(client, './flint');
+```
+
+### Migration Operations
+
+Named, pre-vetted operations:
+
+```ts
+import {
+  addTable, dropTable, renameTable,
+  addColumn, dropColumn, renameColumn,
+  createIndex, dropIndex,
+} from 'flint-orm/migration';
+```
+
+| Operation      | SQL Generated                          |
+| -------------- | -------------------------------------- |
+| `addTable`     | `CREATE TABLE ...`                     |
+| `dropTable`    | `DROP TABLE ...`                       |
+| `renameTable`  | `ALTER TABLE ... RENAME TO ...`        |
+| `addColumn`    | `ALTER TABLE ... ADD COLUMN ...`       |
+| `dropColumn`   | `ALTER TABLE ... DROP COLUMN ...`      |
+| `renameColumn` | `ALTER TABLE ... RENAME COLUMN ... TO` |
+| `createIndex`  | `CREATE [UNIQUE] INDEX ...`            |
+| `dropIndex`    | `DROP INDEX ...`                       |
+
+### Migration File Shape
+
+```ts
+import { defineMigration } from 'flint-orm/migration';
+import { addTable, addColumn } from 'flint-orm/migration';
+
+export default defineMigration({
+  name: 'init_schema',
+  operations: [
+    addTable({ name: 'users', columns: [...], indexes: [...] }),
+    addColumn('users', { name: 'email', sqlType: 'text', ... }),
+  ],
+});
+```
+
+### Tracking
+
+Applied migrations are recorded in `__flint_migrations` (per-database). The table is created on first `migrate()` call — never with `IF NOT EXISTS`.
+
+### FK Ordering
+
+Tables are topologically sorted (Kahn's algorithm) before generating `CREATE TABLE` statements. Referenced tables are created first.
+
+---
+
+## SQLite Introspection
+
+### `introspectSchema(client)`
+
+Read the live database schema and return a `SchemaState` that can be diffed against code-defined tables.
+
+```ts
+import { introspectSchema } from 'flint-orm/sqlite';
+import { diffSchemas } from 'flint-orm/migration';
+
+const client = new Database('./app.db');
+const liveState = introspectSchema(client);
+
+// Compare live DB against code schema
+const codeState = serializeSchema([users, orders]);
+const operations = diffSchemas(liveState, codeState);
+```
+
+Normalizes SQLite type aliases (VARCHAR → TEXT, BIGINT → INTEGER, etc.) and parses default values.
 
 ---
 
@@ -603,6 +770,8 @@ db.$client; // Database instance
 | `ColumnDef<T, S>`   | Column definition with phantom type `T` and storage class `S` |
 | `InferRow<T>`       | Derives row type from table definition                        |
 | `InsertRow<T>`      | Derives insert type (defaults are optional)                   |
+| `IndexDef`          | Index definition: `{ name, columns, unique }`                 |
+| `IndexBuilder`      | Chainable index builder: `.on(cols).unique()`                 |
 | `Condition`         | Condition node for WHERE clauses                              |
 | `Executable`        | Anything with a `.toSQL()` method (for `batch()`)             |
 | `ConnectionDetails` | `{ url: string }`                                             |
