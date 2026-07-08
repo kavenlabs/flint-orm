@@ -4,7 +4,7 @@
 // ---------------------------------------------------------------------------
 
 import { parseArgs } from "node:util";
-import { statSync, readdirSync } from "node:fs";
+import { statSync, readdirSync, existsSync, readFileSync } from "node:fs";
 import { join, resolve, isAbsolute } from "node:path";
 import { pathToFileURL } from "node:url";
 
@@ -115,11 +115,10 @@ async function cmdGenerate(
     const { generateSQL } = await import("./migration/sql.js");
 
     // Find latest state
-    const { existsSync, readFileSync, readdirSync } = await import("node:fs");
     const migrationsDir = resolve(process.cwd(), config.migrations ?? "./flint");
     let previousState: ReturnType<typeof emptyState> = null as any;
     if (existsSync(migrationsDir)) {
-      const folders = readdirSync(migrationsDir).filter((e) => /^\d{3}_/.test(e)).sort().reverse();
+      const folders = readdirSync(migrationsDir).filter((e) => /^\d{10}_/.test(e)).sort().reverse();
       for (const folder of folders) {
         const statePath = join(migrationsDir, folder, "state.json");
         if (existsSync(statePath)) {

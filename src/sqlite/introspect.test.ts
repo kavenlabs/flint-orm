@@ -169,15 +169,10 @@ describe("introspect", () => {
     expect(id.isPrimaryKey).toBe(true);
 
     const email = users.columns.find((c) => c.name === "email")!;
-    // UNIQUE constraint creates an auto-index which we skip,
-    // but the column should still be marked isUnique from the index
-    // Actually, PRAGMA table_info shows notnull but not unique.
-    // We mark isUnique from unique single-column indexes.
-    // Since origin="c" (unique constraint) is skipped, we need another way.
-    // For now, isUnique will be false for UNIQUE constraint columns
-    // unless there's an explicit CREATE UNIQUE INDEX.
-    // This is a known limitation — the column's UNIQUE constraint
-    // is not directly readable from PRAGMAs without the auto-index.
+    // UNIQUE constraint creates an auto-index which we skip.
+    // isUnique is only detected from explicit CREATE UNIQUE INDEX,
+    // not from column-level UNIQUE constraint. This is a known limitation.
+    expect(email.isUnique).toBe(false);
   });
 
   test("reads multiple tables", () => {

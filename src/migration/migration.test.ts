@@ -1,5 +1,5 @@
 // ---------------------------------------------------------------------------
-// Spike test: end-to-end migration generation
+// Migration generation tests
 //
 // Tests the full pipeline: serialize → diff → generate → SQL → state.json
 // ---------------------------------------------------------------------------
@@ -9,12 +9,11 @@ import { existsSync, mkdirSync, rmSync, readFileSync } from "fs";
 import { join } from "path";
 import { text, integer, boolean, real } from "../schema/columns.js";
 import { table, index } from "../schema/table.js";
-import type { SerializedTable } from "./types.js";
+import type { SerializedTable, SerializedIndex, SchemaState, AddTableOp, DropTableOp, AddColumnOp, CreateIndexOp } from "./types.js";
 import { serializeSchema } from "./serialize.js";
 import { diffSchemas, emptyState } from "./diff.js";
 import { generateSQL } from "./sql.js";
 import { generate } from "./generate.js";
-import type { SchemaState } from "./types.js";
 
 // ── Test tables ────────────────────────────────────────────────────────────
 
@@ -87,7 +86,7 @@ describe("diff", () => {
 
     expect(ops).toHaveLength(1);
     expect(ops[0]!.type).toBe("addTable");
-    expect((ops[0] as any).table.name).toBe("users");
+    expect((ops[0] as AddTableOp).table.name).toBe("users");
   });
 
   test("detects dropped tables", () => {
@@ -98,7 +97,7 @@ describe("diff", () => {
 
     expect(ops).toHaveLength(1);
     expect(ops[0]!.type).toBe("dropTable");
-    expect((ops[0] as any).tableName).toBe("orders");
+    expect((ops[0] as DropTableOp).tableName).toBe("orders");
   });
 
   test("detects new columns", () => {
@@ -109,8 +108,8 @@ describe("diff", () => {
 
     expect(ops).toHaveLength(1);
     expect(ops[0]!.type).toBe("addColumn");
-    expect((ops[0] as any).tableName).toBe("users");
-    expect((ops[0] as any).column.name).toBe("email");
+    expect((ops[0] as AddColumnOp).tableName).toBe("users");
+    expect((ops[0] as AddColumnOp).column.name).toBe("email");
   });
 
   test("detects no changes", () => {
@@ -159,7 +158,7 @@ describe("topological sort", () => {
     expect(ops.every((op) => op.type === "addTable")).toBe(true);
 
     // Extract table names in order
-    const tableNames = ops.map((op) => (op as any).table.name);
+    const tableNames = ops.map((op) => (op as AddTableOp).table.name);
 
     // users must come before posts, posts must come before comments
     const usersIdx = tableNames.indexOf("users");
@@ -181,7 +180,7 @@ describe("topological sort", () => {
     expect(ops.every((op) => op.type === "dropTable")).toBe(true);
 
     // Extract table names in order
-    const tableNames = ops.map((op) => (op as any).tableName);
+    const tableNames = ops.map((op) => (op as DropTableOp).tableName);
 
     // comments must be dropped before posts, posts before users
     const usersIdx = tableNames.indexOf("users");
@@ -202,7 +201,7 @@ describe("topological sort", () => {
     expect(ops.every((op) => op.type === "addTable")).toBe(true);
 
     // Both tables should be present (order between independent tables is stable)
-    const tableNames = ops.map((op) => (op as any).table.name);
+    const tableNames = ops.map((op) => (op as AddTableOp).table.name);
     expect(tableNames).toContain("users");
     expect(tableNames).toContain("orders");
   });
@@ -218,7 +217,7 @@ describe("topological sort", () => {
     });
     // Can't actually create circular FK with references() since it needs the target column
     // Instead, manually create a SerializedTable with circular refs
-    const curr: import("./types.js").SchemaState = {
+    const curr: SchemaState = {
       version: 1,
       tables: {
         a: {
@@ -347,8 +346,8 @@ describe("index()", () => {
 
     const tableObj = usersWithIdx as Record<string, unknown>;
     expect(tableObj.__indexes).toBeDefined();
-    expect((tableObj.__indexes as any[])).toHaveLength(1);
-    expect((tableObj.__indexes as any[])[0]).toEqual({
+    expect((tableObj.__indexes as SerializedIndex[])).toHaveLength(1);
+    expect((tableObj.__indexes as SerializedIndex[])[0]).toEqual({
       name: "idx_users_email",
       columns: ["email"],
       unique: true,
@@ -366,9 +365,9 @@ describe("index()", () => {
     ]);
 
     const tableObj = usersWithIdx as Record<string, unknown>;
-    expect((tableObj.__indexes as any[])).toHaveLength(2);
-    expect((tableObj.__indexes as any[])[0]!.name).toBe("idx_users_email");
-    expect((tableObj.__indexes as any[])[1]!.name).toBe("idx_users_name");
+    expect((tableObj.__indexes as SerializedIndex[])).toHaveLength(2);
+    expect((tableObj.__indexes as SerializedIndex[])[0]!.name).toBe("idx_users_email");
+    expect((tableObj.__indexes as SerializedIndex[])[1]!.name).toBe("idx_users_name");
   });
 
   test("table() without callback has no indexes", () => {
@@ -415,7 +414,7 @@ describe("index()", () => {
 
     expect(ops).toHaveLength(1);
     expect(ops[0]!.type).toBe("createIndex");
-    expect((ops[0] as any).index.name).toBe("idx_users_email");
+    expect((ops[0] as CreateIndexOp).index.name).toBe("idx_users_email");
   });
 
   test("generate produces CREATE INDEX SQL", () => {

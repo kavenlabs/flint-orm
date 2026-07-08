@@ -20,27 +20,6 @@ function cleanup() {
   }
 }
 
-function createMigration(
-  folderName: string,
-  operations: Array<{ type: string; [key: string]: unknown }>,
-): void {
-  const dir = join(TEST_MIGRATIONS_DIR, folderName);
-  mkdirSync(dir, { recursive: true });
-
-  const content = `
-import { defineMigration } from "flint-orm/migration";
-import { ${operations.map((op) => op.type).join(", ")} } from "flint-orm/migration/operations";
-
-export default defineMigration({
-  name: "${folderName.replace(/^\d{10}_/, "")}",
-  operations: [
-${operations.map((op) => `    ${op.type}(${JSON.stringify(op).slice(1, -1)}),`).join("\n")}
-  ],
-});
-`;
-  writeFileSync(join(dir, "migration.ts"), content);
-}
-
 // Simple migration that creates a users table
 function createUsersMigration(timestamp: number, name = "init_users") {
   const folderName = `${timestamp}_${name}`;

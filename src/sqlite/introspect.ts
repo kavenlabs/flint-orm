@@ -85,7 +85,7 @@ function parseDefault(dfltValue: unknown): { hasDefault: boolean; defaultValue?:
 function introspectColumns(
   client: Database,
   tableName: string,
-): { columns: SerializedColumn[]; indexRows: Array<{ name: string; unique: number; origin: string }> } {
+): { columns: SerializedColumn[]; indexRows: { name: string; unique: number; origin: string }[] } {
   const rows = client.query(`PRAGMA table_info('${tableName}')`).all() as {
     cid: number;
     name: string;
@@ -165,7 +165,7 @@ function introspectColumns(
 
 function introspectIndexes(
   client: Database,
-  indexRows: Array<{ name: string; unique: number; origin: string }>,
+  indexRows: { name: string; unique: number; origin: string }[],
 ): SerializedIndex[] {
   const indexes: SerializedIndex[] = [];
 

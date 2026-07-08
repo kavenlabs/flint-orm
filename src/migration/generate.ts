@@ -6,7 +6,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync, readdirSync } from "fs";
 import { join } from "path";
 import type { TableDef } from "../schema/table.js";
-import type { SchemaState, MigrationOperation } from "./types.js";
+import type { SchemaState, MigrationOperation, SerializedColumn, SerializedIndex, SerializedTable } from "./types.js";
 import { serializeSchema } from "./serialize.js";
 import { diffSchemas, emptyState } from "./diff.js";
 import { generateSQL } from "./sql.js";
@@ -108,7 +108,7 @@ function serializeOpArg(op: MigrationOperation): string {
   }
 }
 
-function serializeColumnArg(col: import("./types.js").SerializedColumn): string {
+function serializeColumnArg(col: SerializedColumn): string {
   const obj: Record<string, unknown> = {
     name: col.name,
     sqlType: col.sqlType,
@@ -127,11 +127,11 @@ function serializeColumnArg(col: import("./types.js").SerializedColumn): string 
   return JSON.stringify(obj);
 }
 
-function serializeIndexArg(idx: import("./types.js").SerializedIndex): string {
+function serializeIndexArg(idx: SerializedIndex): string {
   return `{ name: ${JSON.stringify(idx.name)}, columns: ${JSON.stringify(idx.columns)}, unique: ${idx.unique} }`;
 }
 
-function serializeTableArg(table: import("./types.js").SerializedTable): string {
+function serializeTableArg(table: SerializedTable): string {
   const cols = table.columns.map((c) => serializeColumnArg(c)).join(",\n      ");
   const idxs = table.indexes.map((i) => serializeIndexArg(i)).join(",\n      ");
   let arg = `{\n      name: ${JSON.stringify(table.name)},\n      columns: [\n      ${cols}\n      ]`;

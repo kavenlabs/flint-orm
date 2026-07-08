@@ -9,6 +9,16 @@ import type {
   SerializedColumn,
   SerializedTable,
 } from "./types.js";
+import {
+  addTable,
+  dropTable,
+  renameTable,
+  addColumn,
+  dropColumn,
+  renameColumn,
+  createIndex,
+  dropIndex,
+} from "./operations.js";
 
 // ---------------------------------------------------------------------------
 // Topological sort — orders tables by FK dependency (independent → dependent).
@@ -49,16 +59,6 @@ function topologicalSort(tables: SerializedTable[]): SerializedTable[] {
 
   return sorted;
 }
-import {
-  addTable,
-  dropTable,
-  renameTable,
-  addColumn,
-  dropColumn,
-  renameColumn,
-  createIndex,
-  dropIndex,
-} from "./operations.js";
 
 // ---------------------------------------------------------------------------
 // Diff two column definitions — returns operations for any differences.

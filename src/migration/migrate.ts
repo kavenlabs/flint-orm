@@ -8,6 +8,7 @@ import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import type { Database, SQLQueryBindings } from "bun:sqlite";
 import type { MigrationFile } from "./types.js";
+import { generateSQL } from "./sql.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -102,16 +103,6 @@ async function loadMigration(entry: MigrationEntry): Promise<MigrationFile> {
 }
 
 // ---------------------------------------------------------------------------
-// SQL generation from operations (reuse from sql.ts)
-// ---------------------------------------------------------------------------
-
-// We import generateSQL lazily to avoid circular dependencies
-async function getSQLGenerator() {
-  const { generateSQL } = await import("./sql.js");
-  return generateSQL;
-}
-
-// ---------------------------------------------------------------------------
 // Public: apply pending migrations
 // ---------------------------------------------------------------------------
 
@@ -165,7 +156,6 @@ export async function migrate(
   }
 
   // Load and apply each pending migration
-  const generateSQL = await getSQLGenerator();
   const newlyApplied: string[] = [];
 
   for (const entry of pending) {
@@ -202,9 +192,9 @@ export async function migrate(
 
 export interface MigrationStatus {
   /** Applied migration names with their timestamps. */
-  applied: Array<{ name: string; folderName: string }>;
+  applied: { name: string; folderName: string }[];
   /** Pending migration names. */
-  pending: Array<{ name: string; folderName: string }>;
+  pending: { name: string; folderName: string }[];
 }
 
 /**
