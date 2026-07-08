@@ -27,7 +27,11 @@ type StampedColumn = ColumnDef<any, any> & {
   onUpdate?: () => ColumnDef<any, any>;
 };
 
-export function table<T extends Record<string, ColumnDef<any, any>>>(name: string, columns: T): TableDef<T> {
+export function table<T extends Record<string, ColumnDef<any, any>>>(
+  name: string,
+  columns: T,
+  indexFn?: (t: TableDef<T>) => IndexBuilder[],
+): TableDef<T> {
   // Stamp table name onto each column
   const stamped = Object.create(null);
   for (const [key, col] of Object.entries(columns)) {
@@ -88,9 +92,22 @@ export function table<T extends Record<string, ColumnDef<any, any>>>(name: strin
 
     stamped[key] = stampedCol;
   }
-  return Object.assign(stamped, {
+  const result = Object.assign(stamped, {
     _: { name },
   }) as TableDef<T>;
+
+  // Attach indexes from callback (auto-call .build() on each)
+  if (indexFn) {
+    const raw = indexFn(result);
+    if (raw.length > 0) {
+      const tableObj = result as Record<string, unknown>;
+      tableObj.__indexes = raw.map((item) =>
+        (item as IndexBuilderInternal).build(),
+      );
+    }
+  }
+
+  return result;
 }
 
 /**
@@ -144,7 +161,11 @@ function toSnakeCase(str: string): string {
  *   firstName: text(),
  * });
  */
-export function snakeCaseTable<T extends Record<string, ColumnDef<any, any>>>(tableName: string, columns: T): TableDef<T> {
+export function snakeCaseTable<T extends Record<string, ColumnDef<any, any>>>(
+  tableName: string,
+  columns: T,
+  indexFn?: (t: TableDef<T>) => IndexBuilder[],
+): TableDef<T> {
   // Create a new object with snake_case names stamped onto each column
   const converted: Record<string, ColumnDef<any, any>> = {};
   for (const [key, col] of Object.entries(columns)) {
@@ -203,10 +224,78 @@ export function snakeCaseTable<T extends Record<string, ColumnDef<any, any>>>(ta
     converted[key] = stampedCol;
   }
 
-  return table(tableName, converted as T);
+  return table(tableName, converted as T, indexFn);
 }
 
 /** Provides `snakeCase.table()` for auto snake_case column naming. */
 export const snakeCase = {
   table: snakeCaseTable,
 };
+
+// ---------------------------------------------------------------------------
+// Index definition — chainable builder
+// ---------------------------------------------------------------------------
+
+/** An index definition — used internally by the migration system. */
+export interface IndexDef {
+  name: string;
+  columns: string[];
+  unique: boolean;
+}
+
+/** Public builder returned by `index()` — chain `.on(columns)` then `.unique()`. */
+export interface IndexBuilder {
+  /** Add one or more columns to the index. */
+  on(...columns: ColumnDef<any, any>[]): IndexBuilder;
+  /** Mark the index as unique. */
+  unique(): IndexBuilder;
+}
+
+/** @internal Internal builder with `.build()` — accepted by `table()`. */
+interface IndexBuilderInternal extends IndexBuilder {
+  build(): IndexDef;
+}
+
+/**
+ * Create an index definition using a chainable API.
+ *
+ * @param name - The index name (will be used as-is in SQL)
+ * @returns An IndexBuilder — chain `.on(columns)` then `.unique()`
+ *
+ * @example
+ * const users = table("users", {
+ *   id: text("id").primaryKey(),
+ *   email: text("email"),
+ *   name: text("name"),
+ * }, (t) => [
+ *   index("idx_users_email").on(t.email).unique(),
+ *   index("idx_users_name").on(t.name),
+ * ]);
+ */
+export function index(name: string): IndexBuilderInternal {
+  let columns: ColumnDef<any, any>[] = [];
+  let isUnique = false;
+
+  const builder: IndexBuilderInternal = {
+    on(...cols) {
+      columns = cols;
+      return builder;
+    },
+    unique() {
+      isUnique = true;
+      return builder;
+    },
+    build(): IndexDef {
+      if (columns.length === 0) {
+        throw new Error(`Index "${name}" has no columns — call .on() before returning`);
+      }
+      return {
+        name,
+        columns: columns.map((c) => c.name),
+        unique: isUnique,
+      };
+    },
+  };
+
+  return builder;
+}
