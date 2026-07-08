@@ -29,6 +29,10 @@
     "./config": {
       "import": "./dist/entries/config.js",
       "types": "./dist/entries/config.d.ts"
+    },
+    "./migration": {
+      "import": "./dist/src/migration/index.js",
+      "types": "./dist/src/migration/index.d.ts"
     }
   },
   "files": [
