@@ -145,6 +145,16 @@ export function flint(details: ConnectionDetails) {
      */
     max: <T extends AnyTable, C extends ColumnDef<any, any>>(table: T, column: C, condition?: Condition) => max(client, table, column, condition),
 
+    /**
+     * Execute raw SQL directly against the database.
+     *
+     * @example
+     * db.$run("CREATE TABLE test (id INTEGER PRIMARY KEY, name TEXT)")
+     */
+    $run(sql: string, ...params: SQLQueryBindings[]) {
+      return client.prepare(sql).run(...params);
+    },
+
     /** Direct access to the underlying `bun:sqlite` client. */
     $client: client,
   };
