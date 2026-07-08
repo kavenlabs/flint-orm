@@ -7,6 +7,8 @@ export { serializeSchema } from "./serialize.js";
 export { diffSchemas, emptyState } from "./diff.js";
 export { generateSQL } from "./sql.js";
 export { generate } from "./generate.js";
+export { migrate, getMigrationStatus } from "./migrate.js";
+export type { MigrateOptions, MigrateResult, MigrationStatus } from "./migrate.js";
 export {
   addTable,
   dropTable,
