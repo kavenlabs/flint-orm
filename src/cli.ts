@@ -13,7 +13,11 @@ import { pathToFileURL } from "node:url";
 // ---------------------------------------------------------------------------
 
 interface FlintConfig {
+  /** Path to the SQLite database file. */
+  url: string;
+  /** Path to schema file or directory. */
   schema: string;
+  /** Path to migrations directory (default: ./flint). */
   migrations?: string;
 }
 
@@ -162,12 +166,68 @@ async function cmdGenerate(
 }
 
 async function cmdMigrate(
-  _args: ReturnType<typeof parseArgs>["values"],
-  _config: FlintConfig,
+  args: ReturnType<typeof parseArgs>["values"],
+  config: FlintConfig,
 ): Promise<void> {
-  console.log("🚧 migrate command — not yet implemented.");
-  console.log("   This will apply pending migrations to the database.");
-  console.log("   Coming soon!");
+  const { Database } = await import("bun:sqlite");
+  const { migrate, getMigrationStatus } = await import("./migration/migrate.js");
+
+  const migrationsDir = resolve(process.cwd(), config.migrations ?? "./flint");
+  const dryRun = args["dry-run"] === true;
+  const statusOnly = args.status === true;
+  const name = typeof args.name === "string" ? args.name : undefined;
+
+  // Open database from config
+  const dbUrl = resolve(process.cwd(), config.url);
+  const db = new Database(dbUrl);
+
+  try {
+    if (statusOnly) {
+      const status = getMigrationStatus(db, migrationsDir);
+
+      if (status.applied.length === 0 && status.pending.length === 0) {
+        console.log("✅ No migrations found.");
+        return;
+      }
+
+      if (status.applied.length > 0) {
+        console.log("\n📋 Applied migrations:");
+        for (const m of status.applied) {
+          console.log(`   ✓ ${m.name} (${m.folderName})`);
+        }
+      }
+
+      if (status.pending.length > 0) {
+        console.log("\n⏳ Pending migrations:");
+        for (const m of status.pending) {
+          console.log(`   ○ ${m.name} (${m.folderName})`);
+        }
+      }
+
+      console.log(`\n   ${status.applied.length} applied, ${status.pending.length} pending`);
+      return;
+    }
+
+    const result = await migrate(db, {
+      migrationsDir,
+      dryRun,
+    });
+
+    if (result.applied.length === 0) {
+      console.log("\n✅ No pending migrations — database is up to date.");
+    } else {
+      console.log(`\n🚀 ${dryRun ? "Would apply" : "Applied"} ${result.applied.length} migration(s):`);
+      for (const name of result.applied) {
+        console.log(`   ✓ ${name}`);
+      }
+    }
+
+    if (result.skipped.length > 0 && !dryRun) {
+      console.log(`\n⏭  Skipped ${result.skipped.length} already applied migration(s)`);
+    }
+  } finally {
+    db.close();
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -183,16 +243,23 @@ Usage:
 
 Commands:
   generate   Generate a new migration from schema changes
-  migrate    Apply pending migrations (stub — not yet implemented)
+  migrate    Apply pending migrations to the database
 
 Options for generate:
   --name <name>     Migration name (optional)
   --preview         Show what would be generated without writing files
 
+Options for migrate:
+  --status          Show applied and pending migrations
+  --dry-run         Show what would be applied without executing
+  --name <name>     Apply only the named migration
+
 Examples:
   flint generate --name init_schema
   flint generate --preview
   flint migrate
+  flint migrate --status
+  flint migrate --dry-run
 `);
 }
 
@@ -207,6 +274,8 @@ async function main(): Promise<void> {
       name: { type: "string", short: "n" },
       preview: { type: "boolean", short: "p" },
       help: { type: "boolean", short: "h" },
+      status: { type: "boolean", short: "s" },
+      "dry-run": { type: "boolean", short: "d" },
     },
     allowPositionals: true,
   });

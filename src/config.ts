@@ -3,6 +3,9 @@
 // ---------------------------------------------------------------------------
 
 export interface FlintConfig {
+  /** Path to the SQLite database file. */
+  url: string;
+
   /** Path to schema folder or file containing table() exports. */
   schema: string;
 
@@ -11,12 +14,13 @@ export interface FlintConfig {
 }
 
 /**
- * Define a flint-orm config with type checking and autocomplete.
+ * Define a flint-orm config.
  *
  * @example
  * import { defineConfig } from "flint-orm/config";
  *
  * export default defineConfig({
+ *   url: "./app.db",
  *   schema: "./src/schema",
  * });
  */
