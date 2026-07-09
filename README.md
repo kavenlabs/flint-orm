@@ -1,6 +1,6 @@
 # flint-orm
 
-A minimal, type-safe SQLite ORM for Bun. One dialect, one runtime, no abstraction overhead.
+A minimal, type-safe SQLite ORM. One dialect, one runtime, no abstraction overhead.
 
 ## Why
 
@@ -9,6 +9,7 @@ Drizzle is great, but its execution layer (`drizzle-kit migrate`) wasn't built f
 ## Install
 
 ```bash
+npm install flint-orm
 bun add flint-orm
 ```
 
