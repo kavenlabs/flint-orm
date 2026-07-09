@@ -2,7 +2,8 @@ import { describe, test, expect, beforeEach, afterEach } from 'bun:test';
 import { Database } from 'bun:sqlite';
 import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { migrate, getMigrationStatus } from '../../src/migration/migrate.js';
+import { BunSqliteExecutor } from '../../src/drivers/bun-sqlite';
+import { migrate, getMigrationStatus } from '../../src/migration/migrate';
 
 const TEST_MIGRATIONS_DIR = join(import.meta.dir, '../../test-migrate-temp');
 
@@ -72,11 +73,13 @@ export default defineMigration({
 
 describe('migrate', () => {
   let db: Database;
+  let executor: BunSqliteExecutor;
 
   beforeEach(() => {
     cleanup();
     mkdirSync(TEST_MIGRATIONS_DIR, { recursive: true });
     db = new Database(':memory:');
+    executor = new BunSqliteExecutor(db);
   });
 
   afterEach(() => {
@@ -88,7 +91,7 @@ describe('migrate', () => {
     createUsersMigration(1000000001);
     createEmailMigration(1000000002);
 
-    const result = await migrate(db, { migrationsDir: TEST_MIGRATIONS_DIR });
+    const result = await migrate(executor, { migrationsDir: TEST_MIGRATIONS_DIR });
 
     expect(result.applied).toEqual(['1000000001_init_users', '1000000002_add_email']);
     expect(result.skipped).toEqual([]);
@@ -98,9 +101,9 @@ describe('migrate', () => {
     createUsersMigration(1000000001);
     createEmailMigration(1000000002);
 
-    await migrate(db, { migrationsDir: TEST_MIGRATIONS_DIR });
+    await migrate(executor, { migrationsDir: TEST_MIGRATIONS_DIR });
 
-    const result = await migrate(db, { migrationsDir: TEST_MIGRATIONS_DIR });
+    const result = await migrate(executor, { migrationsDir: TEST_MIGRATIONS_DIR });
 
     expect(result.applied).toEqual([]);
     expect(result.skipped).toEqual(['1000000001_init_users', '1000000002_add_email']);
@@ -109,11 +112,11 @@ describe('migrate', () => {
   test('applies only new migrations on second run', async () => {
     createUsersMigration(1000000001);
 
-    await migrate(db, { migrationsDir: TEST_MIGRATIONS_DIR });
+    await migrate(executor, { migrationsDir: TEST_MIGRATIONS_DIR });
 
     createEmailMigration(1000000002);
 
-    const result = await migrate(db, { migrationsDir: TEST_MIGRATIONS_DIR });
+    const result = await migrate(executor, { migrationsDir: TEST_MIGRATIONS_DIR });
 
     expect(result.applied).toEqual(['1000000002_add_email']);
     expect(result.skipped).toEqual(['1000000001_init_users']);
@@ -123,7 +126,7 @@ describe('migrate', () => {
     createUsersMigration(1000000001);
     createEmailMigration(1000000002);
 
-    const result = await migrate(db, {
+    const result = await migrate(executor, {
       migrationsDir: TEST_MIGRATIONS_DIR,
       dryRun: true,
     });
@@ -138,7 +141,7 @@ describe('migrate', () => {
   test('records applied migrations in tracking table', async () => {
     createUsersMigration(1000000001);
 
-    await migrate(db, { migrationsDir: TEST_MIGRATIONS_DIR });
+    await migrate(executor, { migrationsDir: TEST_MIGRATIONS_DIR });
 
     const rows = db.query('SELECT name, applied_at FROM __flint_migrations ORDER BY id').all() as {
       name: string;
@@ -151,14 +154,14 @@ describe('migrate', () => {
   });
 
   test('handles empty migrations directory', async () => {
-    const result = await migrate(db, { migrationsDir: TEST_MIGRATIONS_DIR });
+    const result = await migrate(executor, { migrationsDir: TEST_MIGRATIONS_DIR });
 
     expect(result.applied).toEqual([]);
     expect(result.skipped).toEqual([]);
   });
 
   test('handles non-existent migrations directory', async () => {
-    const result = await migrate(db, { migrationsDir: '/nonexistent/path' });
+    const result = await migrate(executor, { migrationsDir: '/nonexistent/path' });
 
     expect(result.applied).toEqual([]);
     expect(result.skipped).toEqual([]);
@@ -167,7 +170,7 @@ describe('migrate', () => {
   test('migration SQL creates correct schema', async () => {
     createUsersMigration(1000000001);
 
-    await migrate(db, { migrationsDir: TEST_MIGRATIONS_DIR });
+    await migrate(executor, { migrationsDir: TEST_MIGRATIONS_DIR });
 
     const columns = db.query("PRAGMA table_info('users')").all() as { name: string; type: string }[];
     const colNames = columns.map((c) => c.name);
@@ -179,7 +182,7 @@ describe('migrate', () => {
     createEmailMigration(1000000002);
     createUsersMigration(1000000001);
 
-    const result = await migrate(db, { migrationsDir: TEST_MIGRATIONS_DIR });
+    const result = await migrate(executor, { migrationsDir: TEST_MIGRATIONS_DIR });
 
     expect(result.applied).toEqual(['1000000001_init_users', '1000000002_add_email']);
   });
@@ -187,11 +190,13 @@ describe('migrate', () => {
 
 describe('getMigrationStatus', () => {
   let db: Database;
+  let executor: BunSqliteExecutor;
 
   beforeEach(() => {
     cleanup();
     mkdirSync(TEST_MIGRATIONS_DIR, { recursive: true });
     db = new Database(':memory:');
+    executor = new BunSqliteExecutor(db);
   });
 
   afterEach(() => {
@@ -199,10 +204,10 @@ describe('getMigrationStatus', () => {
     cleanup();
   });
 
-  test('returns empty status before any migrations', () => {
+  test('returns empty status before any migrations', async () => {
     createUsersMigration(1000000001);
 
-    const status = getMigrationStatus(db, TEST_MIGRATIONS_DIR);
+    const status = await getMigrationStatus(executor, TEST_MIGRATIONS_DIR);
 
     expect(status.applied).toEqual([]);
     expect(status.pending).toHaveLength(1);
@@ -212,9 +217,9 @@ describe('getMigrationStatus', () => {
     createUsersMigration(1000000001);
     createEmailMigration(1000000002);
 
-    await migrate(db, { migrationsDir: TEST_MIGRATIONS_DIR });
+    await migrate(executor, { migrationsDir: TEST_MIGRATIONS_DIR });
 
-    const status = getMigrationStatus(db, TEST_MIGRATIONS_DIR);
+    const status = await getMigrationStatus(executor, TEST_MIGRATIONS_DIR);
 
     expect(status.applied).toHaveLength(2);
     expect(status.pending).toHaveLength(0);

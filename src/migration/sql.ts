@@ -3,7 +3,7 @@
 // Each operation maps to exactly one known-correct SQL statement.
 // ---------------------------------------------------------------------------
 
-import type { MigrationOperation, SerializedColumn, SerializedIndex, SerializedTable } from './types.js';
+import type { MigrationOperation, SerializedColumn, SerializedIndex } from './types.js';
 
 // ---------------------------------------------------------------------------
 // Column → SQL type
@@ -67,49 +67,43 @@ function formatDefault(value: unknown): string {
 // Operation → SQL
 // ---------------------------------------------------------------------------
 
-function operationToSQL(op: MigrationOperation): string {
+function operationToSQL(op: MigrationOperation): string[] {
   switch (op.type) {
     case 'addTable': {
       const cols = op.table.columns.map(columnToDDL).join(',\n  ');
-      let sql = `CREATE TABLE ${op.table.name} (\n  ${cols}\n)`;
-      // Add table-level indexes after the CREATE TABLE
-      const indexes = op.table.indexes.map((idx) => indexToSQL(idx, op.table.name));
-      if (indexes.length > 0) {
-        sql += ';\n' + indexes.join(';\n');
+      const stmts: string[] = [`CREATE TABLE ${op.table.name} (\n  ${cols}\n)`];
+      for (const idx of op.table.indexes) {
+        stmts.push(indexToSQL(idx, op.table.name));
       }
-      return sql;
+      return stmts;
     }
 
     case 'dropTable':
-      return `DROP TABLE ${op.tableName}`;
+      return [`DROP TABLE ${op.tableName}`];
 
     case 'renameTable':
-      return `ALTER TABLE ${op.from} RENAME TO ${op.to}`;
+      return [`ALTER TABLE ${op.from} RENAME TO ${op.to}`];
 
     case 'addColumn':
-      return `ALTER TABLE ${op.tableName} ADD COLUMN ${columnToDDL(op.column)}`;
+      return [`ALTER TABLE ${op.tableName} ADD COLUMN ${columnToDDL(op.column)}`];
 
     case 'dropColumn':
-      return `ALTER TABLE ${op.tableName} DROP COLUMN ${op.columnName}`;
+      return [`ALTER TABLE ${op.tableName} DROP COLUMN ${op.columnName}`];
 
     case 'renameColumn':
-      return `ALTER TABLE ${op.tableName} RENAME COLUMN ${op.from} TO ${op.to}`;
+      return [`ALTER TABLE ${op.tableName} RENAME COLUMN ${op.from} TO ${op.to}`];
 
     case 'createIndex':
-      return indexToSQL(op.index, op.tableName);
+      return [indexToSQL(op.index, op.tableName)];
 
     case 'dropIndex':
-      return `DROP INDEX ${op.indexName}`;
+      return [`DROP INDEX ${op.indexName}`];
 
     case 'modifyColumn': {
       const stmts: string[] = [];
-
-      // NOT NULL — SQLite 3.25.0+ supports ALTER COLUMN SET NOT NULL
       if (op.changes.isNotNull !== undefined && op.changes.isNotNull) {
         stmts.push(`ALTER TABLE ${op.tableName} ALTER COLUMN ${op.columnName} SET NOT NULL`);
       }
-
-      // DEFAULT — SQLite 3.25.0+ supports ALTER COLUMN SET DEFAULT / DROP DEFAULT
       if (op.changes.hasDefault !== undefined) {
         if (op.changes.hasDefault && op.changes.defaultValue !== undefined) {
           const val = formatDefault(op.changes.defaultValue);
@@ -118,15 +112,16 @@ function operationToSQL(op: MigrationOperation): string {
           stmts.push(`ALTER TABLE ${op.tableName} ALTER COLUMN ${op.columnName} DROP DEFAULT`);
         }
       }
-
-      return stmts.join(';\n');
+      return stmts;
     }
 
     case 'modifyIndex': {
-      // Index modifications require DROP + CREATE (no ALTER INDEX in SQLite)
       const unique = op.to.unique ? 'UNIQUE ' : '';
       const columns = op.to.columns.join(', ');
-      return `DROP INDEX IF EXISTS ${op.indexName};\nCREATE ${unique}INDEX ${op.indexName} ON ${op.tableName} (${columns})`;
+      return [
+        `DROP INDEX IF EXISTS ${op.indexName}`,
+        `CREATE ${unique}INDEX ${op.indexName} ON ${op.tableName} (${columns})`,
+      ];
     }
   }
 }
@@ -136,5 +131,15 @@ function operationToSQL(op: MigrationOperation): string {
 // ---------------------------------------------------------------------------
 
 export function generateSQL(operations: MigrationOperation[]): string {
-  return operations.map(operationToSQL).join(';\n') + ';';
+  return operations.flatMap(operationToSQL).join(';\n') + ';';
+}
+
+/**
+ * Generate individual SQL statements from migration operations.
+ * Each operation may produce one or more statements (e.g., CREATE TABLE + indexes).
+ *
+ * @internal Used by the migration runner to execute statements individually.
+ */
+export function generateSQLStatements(operations: MigrationOperation[]): string[] {
+  return operations.flatMap(operationToSQL);
 }

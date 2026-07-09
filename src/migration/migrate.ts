@@ -3,12 +3,12 @@
 // what's been applied in a __flint_migrations table.
 // ---------------------------------------------------------------------------
 
-import { existsSync, readdirSync, readFileSync } from 'node:fs';
+import { existsSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import type { Database, SQLQueryBindings } from 'bun:sqlite';
+import type { Executor } from '../executor.js';
 import type { MigrationFile } from './types.js';
-import { generateSQL } from './sql.js';
+import { generateSQLStatements } from './sql.js';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -34,23 +34,24 @@ export interface MigrateResult {
 
 const TRACKING_TABLE = '__flint_migrations';
 
-function ensureTrackingTable(client: Database): void {
-  client.run(`
-    CREATE TABLE IF NOT EXISTS ${TRACKING_TABLE} (
+async function ensureTrackingTable(executor: Executor): Promise<void> {
+  await executor.run(
+    `CREATE TABLE IF NOT EXISTS ${TRACKING_TABLE} (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       name TEXT NOT NULL UNIQUE,
       applied_at INTEGER NOT NULL
-    )
-  `);
+    )`,
+    [],
+  );
 }
 
-function getAppliedMigrations(client: Database): Set<string> {
-  const rows = client.query(`SELECT name FROM ${TRACKING_TABLE} ORDER BY id`).all() as { name: string }[];
+async function getAppliedMigrations(executor: Executor): Promise<Set<string>> {
+  const rows = (await executor.all(`SELECT name FROM ${TRACKING_TABLE} ORDER BY id`, [])) as { name: string }[];
   return new Set(rows.map((r) => r.name));
 }
 
-function recordMigration(client: Database, name: string): void {
-  client.prepare(`INSERT INTO ${TRACKING_TABLE} (name, applied_at) VALUES (?, ?)`).run(name, Date.now());
+async function recordMigration(executor: Executor, name: string): Promise<void> {
+  await executor.run(`INSERT INTO ${TRACKING_TABLE} (name, applied_at) VALUES (?, ?)`, [name, Date.now()]);
 }
 
 // ---------------------------------------------------------------------------
@@ -73,7 +74,6 @@ function discoverMigrations(migrationsDir: string): MigrationEntry[] {
   const migrationFolders = entries.filter((e) => /^\d{10}_/.test(e)).sort(); // Chronological order
 
   return migrationFolders.map((folder) => {
-    // Extract name: everything after the timestamp prefix
     const name = folder.replace(/^\d{10}_/, '');
     return {
       folderName: folder,
@@ -110,28 +110,28 @@ async function loadMigration(entry: MigrationEntry): Promise<MigrationFile> {
  * Reads the migrations directory, filters out already-applied migrations,
  * and applies the remaining ones in order within transactions.
  *
- * @param client - The bun:sqlite Database instance
+ * @param executor - The database executor (works with any driver)
  * @param options - Migration options
  * @returns Result with applied and skipped migration names
  *
  * @example
- * import { Database } from "bun:sqlite";
- * import { migrate } from "flint-orm/migration";
+ * import { flint } from 'flint-orm/bun-sqlite';
+ * import { migrate } from 'flint-orm/migration';
  *
- * const client = new Database("app.db");
- * const result = migrate(client, { migrationsDir: "./flint" });
- * console.log(`Applied: ${result.applied.join(", ")}`);
+ * const db = flint({ url: 'app.db' });
+ * const result = await migrate(db.$executor, { migrationsDir: './flint' });
+ * console.log(`Applied: ${result.applied.join(', ')}`);
  */
-export async function migrate(client: Database, options: MigrateOptions): Promise<MigrateResult> {
+export async function migrate(executor: Executor, options: MigrateOptions): Promise<MigrateResult> {
   const { migrationsDir, dryRun = false } = options;
 
   // Ensure tracking table exists (skip for dry runs)
   if (!dryRun) {
-    ensureTrackingTable(client);
+    await ensureTrackingTable(executor);
   }
 
   // Get already-applied migrations
-  const applied = dryRun ? new Set<string>() : getAppliedMigrations(client);
+  const applied = dryRun ? new Set<string>() : await getAppliedMigrations(executor);
 
   // Discover all migration folders
   const allMigrations = discoverMigrations(migrationsDir);
@@ -155,23 +155,18 @@ export async function migrate(client: Database, options: MigrateOptions): Promis
 
   for (const entry of pending) {
     const migration = await loadMigration(entry);
-    const sql = generateSQL(migration.operations);
 
-    // Split SQL by semicolons and execute each statement
-    const statements = sql
-      .split(';')
-      .map((s) => s.trim())
-      .filter((s) => s.length > 0);
+    // Generate individual statements — one per operation, no split needed
+    const statements = generateSQLStatements(migration.operations);
 
     // Execute in a transaction (use folderName for consistent tracking)
-    const tx = client.transaction(() => {
+    await executor.transaction(async () => {
       for (const stmt of statements) {
-        client.run(stmt);
+        await executor.run(stmt, []);
       }
-      recordMigration(client, entry.folderName);
+      await recordMigration(executor, entry.folderName);
     });
 
-    tx();
     newlyApplied.push(entry.folderName);
   }
 
@@ -195,13 +190,13 @@ export interface MigrationStatus {
 /**
  * Get the status of migrations — which are applied and which are pending.
  *
- * @param client - The bun:sqlite Database instance
+ * @param executor - The database executor (works with any driver)
  * @param migrationsDir - Path to the migrations directory
  * @returns Status object with applied and pending migrations
  */
-export function getMigrationStatus(client: Database, migrationsDir: string): MigrationStatus {
-  ensureTrackingTable(client);
-  const appliedNames = getAppliedMigrations(client);
+export async function getMigrationStatus(executor: Executor, migrationsDir: string): Promise<MigrationStatus> {
+  await ensureTrackingTable(executor);
+  const appliedNames = await getAppliedMigrations(executor);
   const allMigrations = discoverMigrations(migrationsDir);
 
   return {
