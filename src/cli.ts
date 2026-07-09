@@ -9,7 +9,9 @@ import { join, resolve, isAbsolute } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import type { AnyTable, TableDef } from './schema/table.js';
 import type { SchemaState } from './migration/types.js';
-import { intro, outro, log, cancel, isCancel, pc, note } from './cli/ui.js';
+import { intro, outro, log, cancel, isCancel, select, pc, note } from './cli/ui.js';
+import { CancellationError } from './migration/diff.js';
+import type { RenamePrompt } from './migration/diff.js';
 
 // ---------------------------------------------------------------------------
 // Config loading
@@ -94,6 +96,7 @@ async function importTableFolder(folderPath: string): Promise<unknown[]> {
 async function cmdGenerate(args: ReturnType<typeof parseArgs>['values'], config: FlintConfig): Promise<void> {
   const name = typeof args.name === 'string' ? args.name : undefined;
   const preview = args.preview === true;
+  const promptRename: RenamePrompt = (message, options) => select({ message: pc.bold(message), options }) as Promise<string | symbol>;
 
   log.info(`Discovering schema from: ${config.schema}`);
   const tables = await discoverTables(config.schema);
@@ -138,7 +141,7 @@ async function cmdGenerate(args: ReturnType<typeof parseArgs>['values'], config:
     }
 
     // Resolve renames interactively
-    const operations = await resolveRenames(rawOps);
+    const operations = await resolveRenames(rawOps, { interactive: true, prompt: promptRename });
 
     const sql = generateSQL(operations);
     log.info(`Operations: ${operations.length}`);
@@ -152,7 +155,11 @@ async function cmdGenerate(args: ReturnType<typeof parseArgs>['values'], config:
 
   try {
     const migrationsDir = resolve(process.cwd(), config.migrations ?? './flint');
-    const result = await generate(tables as TableDef<any>[], migrationsDir, name);
+    const result = await generate(tables as TableDef<any>[], migrationsDir, {
+      name,
+      interactive: true,
+      prompt: promptRename,
+    });
     log.info(`Operations: ${result.operations.length}`);
     note(result.sql, 'SQL', { format: (text) => styleText('dim', text) });
     log.success(`Migration generated: ${migrationsDir}/${result.folderName}`);
@@ -298,7 +305,7 @@ async function main(): Promise<void> {
 }
 
 main().catch((err) => {
-  if (isCancel(err)) {
+  if (isCancel(err) || err instanceof CancellationError) {
     cancel('Operation cancelled.');
   } else {
     cancel(err.message ?? 'An error occurred');

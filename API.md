@@ -129,15 +129,15 @@ type UserInsert = InsertRow<typeof users>;
 Define indexes via the table callback. Chainable API.
 
 ```ts
-const users = table('users', {
-  id: text('id').primaryKey(),
-  email: text('email'),
-  name: text('name'),
-}, (t) => [
-  index('idx_users_email').on(t.email).unique(),
-  index('idx_users_name').on(t.name),
-  index('idx_users_email_name').on(t.email, t.name),
-]);
+const users = table(
+  'users',
+  {
+    id: text('id').primaryKey(),
+    email: text('email'),
+    name: text('name'),
+  },
+  (t) => [index('idx_users_email').on(t.email).unique(), index('idx_users_name').on(t.name), index('idx_users_email_name').on(t.email, t.name)],
+);
 ```
 
 The callback receives the table definition and returns an array of `IndexBuilder` objects. Indexes are attached to the table automatically and serialized for migrations.
@@ -579,10 +579,7 @@ import { flint, table, text, eq } from 'flint-orm';
 
 const db = flint({ url: 'app.db' });
 
-db.batch([
-  db.insert(orders).values({ id: 'o1', userId: 'u1', total: 100 }),
-  db.update(users).set({ totalOrders: 1 }).where(eq(users.id, 'u1')),
-]);
+db.batch([db.insert(orders).values({ id: 'o1', userId: 'u1', total: 100 }), db.update(users).set({ totalOrders: 1 }).where(eq(users.id, 'u1'))]);
 ```
 
 All queries succeed or all roll back.
@@ -661,9 +658,9 @@ import { defineConfig } from 'flint-orm/config';
 
 export default defineConfig({
   schema: './src/schema', // folder or file with table() definitions
-  migrations: './flint',  // where migration folders are stored
+  migrations: './flint', // where migration folders are stored
   database: {
-    url: './app.db',      // SQLite database path
+    url: './app.db', // SQLite database path
   },
 });
 ```
@@ -697,11 +694,7 @@ const status = getMigrationStatus(client, './flint');
 Named, pre-vetted operations:
 
 ```ts
-import {
-  addTable, dropTable, renameTable,
-  addColumn, dropColumn, renameColumn,
-  createIndex, dropIndex,
-} from 'flint-orm/migration';
+import { addTable, dropTable, renameTable, addColumn, dropColumn, renameColumn, createIndex, dropIndex } from 'flint-orm/migration';
 ```
 
 | Operation      | SQL Generated                          |

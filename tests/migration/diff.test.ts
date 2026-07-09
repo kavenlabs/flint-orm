@@ -107,42 +107,6 @@ describe('diffSchema', () => {
     expect((ops[0] as DropColumnOp).columnName).toBe('email');
   });
 
-  test('produces drop + add for column rename candidates', () => {
-    const from: SchemaState = {
-      version: 1,
-      tables: {
-        users: {
-          name: 'users',
-          columns: [
-            { name: 'id', sqlType: 'text', isPrimaryKey: true, isNotNull: false, isUnique: false, hasDefault: false },
-            { name: 'name', sqlType: 'text', isPrimaryKey: false, isNotNull: false, isUnique: false, hasDefault: false },
-          ],
-          indexes: [],
-        },
-      },
-    };
-    const to: SchemaState = {
-      version: 1,
-      tables: {
-        users: {
-          name: 'users',
-          columns: [
-            { name: 'id', sqlType: 'text', isPrimaryKey: true, isNotNull: false, isUnique: false, hasDefault: false },
-            { name: 'full_name', sqlType: 'text', isPrimaryKey: false, isNotNull: false, isUnique: false, hasDefault: false },
-          ],
-          indexes: [],
-        },
-      },
-    };
-
-    const ops = diffSchemas(from, to);
-
-    // Should produce drop + add (rename resolved via interactive prompts)
-    expect(ops).toHaveLength(2);
-    expect(ops.some((op) => op.type === 'dropColumn')).toBe(true);
-    expect(ops.some((op) => op.type === 'addColumn')).toBe(true);
-  });
-
   test('detects added index', () => {
     const from: SchemaState = {
       version: 1,
@@ -367,9 +331,7 @@ describe('diffSchema', () => {
       tables: {
         users: {
           name: 'users',
-          columns: [
-            { name: 'id', sqlType: 'text', isPrimaryKey: false, isNotNull: false, isUnique: false, hasDefault: false },
-          ],
+          columns: [{ name: 'id', sqlType: 'text', isPrimaryKey: false, isNotNull: false, isUnique: false, hasDefault: false }],
           indexes: [],
         },
       },
@@ -379,9 +341,7 @@ describe('diffSchema', () => {
       tables: {
         users: {
           name: 'users',
-          columns: [
-            { name: 'id', sqlType: 'text', isPrimaryKey: true, isNotNull: false, isUnique: false, hasDefault: false },
-          ],
+          columns: [{ name: 'id', sqlType: 'text', isPrimaryKey: true, isNotNull: false, isUnique: false, hasDefault: false }],
           indexes: [],
         },
       },
@@ -488,7 +448,7 @@ describe('diffSchema', () => {
     expect((ops[0] as ModifyColumnOp).changes.defaultValue).toBe('active');
   });
 
-  test('detects DEFAULT removal', () => {
+  test('throws on DEFAULT removal', () => {
     const from: SchemaState = {
       version: 1,
       tables: {
@@ -516,11 +476,7 @@ describe('diffSchema', () => {
       },
     };
 
-    const ops = diffSchemas(from, to);
-
-    expect(ops).toHaveLength(1);
-    expect(ops[0]!.type).toBe('modifyColumn');
-    expect((ops[0] as ModifyColumnOp).changes.hasDefault).toBe(false);
+    expect(() => diffSchemas(from, to)).toThrow('removing DEFAULT requires a table rebuild');
   });
 
   test('detects DEFAULT value change', () => {

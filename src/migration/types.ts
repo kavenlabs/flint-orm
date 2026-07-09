@@ -47,6 +47,7 @@ export interface AddTableOp {
 export interface DropTableOp {
   type: 'dropTable';
   tableName: string;
+  columns?: SerializedColumn[];
 }
 
 export interface RenameTableOp {
@@ -91,7 +92,6 @@ export interface ModifyColumnOp {
   columnName: string;
   changes: {
     isNotNull?: boolean;
-    isUnique?: boolean;
     hasDefault?: boolean;
     defaultValue?: unknown;
   };

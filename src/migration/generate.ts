@@ -9,6 +9,7 @@ import type { TableDef } from '../schema/table.js';
 import type { SchemaState, MigrationOperation, SerializedColumn, SerializedIndex, SerializedTable } from './types.js';
 import { serializeSchema } from './serialize.js';
 import { diffSchemas, emptyState, resolveRenames } from './diff.js';
+import type { RenamePrompt } from './diff.js';
 import { generateSQL } from './sql.js';
 
 // ---------------------------------------------------------------------------
@@ -310,7 +311,19 @@ export interface GenerateResult {
   state: SchemaState;
 }
 
-export async function generate(tables: TableDef<any>[], migrationsDir: string, migrationName?: string): Promise<GenerateResult> {
+export interface GenerateOptions {
+  /** Migration folder name override. */
+  name?: string;
+  /** Whether to run interactive rename prompts. Defaults to true. */
+  interactive?: boolean;
+  /** Custom prompt function for rename resolution. Required when interactive is true. */
+  prompt?: RenamePrompt;
+}
+
+export async function generate(tables: TableDef<any>[], migrationsDir: string, nameOrOptions?: string | GenerateOptions): Promise<GenerateResult> {
+  const options: GenerateOptions = typeof nameOrOptions === 'string' ? { name: nameOrOptions } : (nameOrOptions ?? {});
+  const migrationName = options.name;
+
   const previous = findLatestState(migrationsDir) ?? emptyState();
   const current = serializeSchema(tables);
 
@@ -321,7 +334,7 @@ export async function generate(tables: TableDef<any>[], migrationsDir: string, m
   }
 
   // Resolve renames interactively
-  const operations = await resolveRenames(rawOps);
+  const operations = await resolveRenames(rawOps, { interactive: options.interactive, prompt: options.prompt });
 
   const sql = generateSQL(operations);
   const folderName = generateFolderName(migrationName);

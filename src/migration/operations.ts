@@ -23,8 +23,8 @@ export function addTable(table: Omit<SerializedTable, 'indexes'> & { indexes?: S
   return { type: 'addTable', table: { ...table, indexes: table.indexes ?? [] } };
 }
 
-export function dropTable(tableName: string): DropTableOp {
-  return { type: 'dropTable', tableName };
+export function dropTable(tableName: string, columns?: SerializedColumn[]): DropTableOp {
+  return { type: 'dropTable', tableName, columns };
 }
 
 export function renameTable(from: string, to: string): RenameTableOp {

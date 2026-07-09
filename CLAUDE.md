@@ -30,12 +30,12 @@ flint migrate --status
 ### Config (`flint.config.ts`)
 
 ```ts
-import { defineConfig } from "flint-orm/config";
+import { defineConfig } from 'flint-orm/config';
 
 export default defineConfig({
-  schema: "./src/schema",
-  migrations: "./flint",
-  database: { url: "./app.db" },
+  schema: './src/schema',
+  migrations: './flint',
+  database: { url: './app.db' },
 });
 ```
 
@@ -107,9 +107,9 @@ Auto-converts camelCase keys to snake_case SQL names:
 import { snakeCase, text } from 'flint-orm';
 
 const users = snakeCase.table('users', {
-  id: text().primaryKey(),      // SQL: id
-  firstName: text().notNull(),  // SQL: first_name
-  createdAt: text(),            // SQL: created_at
+  id: text().primaryKey(), // SQL: id
+  firstName: text().notNull(), // SQL: first_name
+  createdAt: text(), // SQL: created_at
 });
 ```
 
@@ -120,7 +120,7 @@ const users = snakeCase.table('users', {
 - Tables are topologically sorted by foreign key dependencies (Kahn's algorithm)
 
 ```ts
-import { generate, migrate, getMigrationStatus, serializeSchema, diffSchemas, generateSQL } from "flint-orm/migration";
+import { generate, migrate, getMigrationStatus, serializeSchema, diffSchemas, generateSQL } from 'flint-orm/migration';
 ```
 
 ## Agent Guidelines

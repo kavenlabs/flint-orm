@@ -3,9 +3,40 @@
 // named MigrationOperations. This is the core of `flint generate`.
 // ---------------------------------------------------------------------------
 
-import type { SchemaState, MigrationOperation, SerializedColumn, SerializedTable, ModifyColumnOp, AddColumnOp, DropColumnOp, AddTableOp, DropTableOp } from './types.js';
-import { addTable, dropTable, renameTable, addColumn, dropColumn, renameColumn, createIndex, dropIndex, modifyColumn, modifyIndex } from './operations.js';
-import { select, isCancel, cancel, pc } from '../cli/ui.js';
+import type {
+  SchemaState,
+  MigrationOperation,
+  SerializedColumn,
+  SerializedTable,
+  ModifyColumnOp,
+  AddColumnOp,
+  DropColumnOp,
+  AddTableOp,
+  DropTableOp,
+} from './types.js';
+import {
+  addTable,
+  dropTable,
+  renameTable,
+  addColumn,
+  dropColumn,
+  renameColumn,
+  createIndex,
+  dropIndex,
+  modifyColumn,
+  modifyIndex,
+} from './operations.js';
+
+// ---------------------------------------------------------------------------
+// CancellationError — thrown when user cancels an interactive prompt.
+// ---------------------------------------------------------------------------
+
+export class CancellationError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'CancellationError';
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Topological sort — orders tables by FK dependency (independent → dependent).
@@ -100,9 +131,7 @@ function diffColumns(tableName: string, prevCols: SerializedColumn[], currCols: 
       // Adding NOT NULL — safe only if column has a DEFAULT
       if (!prevCol.isNotNull && currCol.isNotNull) {
         if (!currCol.hasDefault) {
-          throw new Error(
-            `Column "${tableName}.${name}" adding NOT NULL requires a DEFAULT value. Add a default: .default(value)`,
-          );
+          throw new Error(`Column "${tableName}.${name}" adding NOT NULL requires a DEFAULT value. Add a default: .default(value)`);
         }
         changes.isNotNull = true;
         hasChanges = true;
@@ -122,6 +151,11 @@ function diffColumns(tableName: string, prevCols: SerializedColumn[], currCols: 
 
     // DEFAULT change
     if (prevCol.hasDefault !== currCol.hasDefault || prevCol.defaultValue !== currCol.defaultValue) {
+      // Removing DEFAULT — SQLite has no DROP DEFAULT syntax
+      if (prevCol.hasDefault && !currCol.hasDefault) {
+        throw new Error(`Column "${tableName}.${name}" removing DEFAULT requires a table rebuild. Handle this manually.`);
+      }
+      // Changing or adding DEFAULT — safe
       changes.hasDefault = currCol.hasDefault;
       changes.defaultValue = currCol.defaultValue;
       hasChanges = true;
@@ -200,7 +234,7 @@ export function diffSchemas(previous: SchemaState, current: SchemaState): Migrat
   const droppedTables = [...prevTables.entries()].filter(([name]) => !currTables.has(name)).map(([, table]) => table);
   const sortedDropped = topologicalSort(droppedTables).reverse();
   for (const table of sortedDropped) {
-    ops.push(dropTable(table.name));
+    ops.push(dropTable(table.name, table.columns));
   }
 
   // Tables in both → diff their contents
@@ -233,7 +267,14 @@ interface PotentialRename {
   to: string;
 }
 
-export async function resolveRenames(operations: MigrationOperation[]): Promise<MigrationOperation[]> {
+export type RenamePrompt = (message: string, options: { value: string; label: string; hint: string }[]) => Promise<string | symbol>;
+
+export async function resolveRenames(
+  operations: MigrationOperation[],
+  options?: { interactive?: boolean; prompt?: RenamePrompt },
+): Promise<MigrationOperation[]> {
+  const interactive = options?.interactive ?? true;
+  const prompt = options?.prompt;
   // Group potential renames by the "to" entity
   const renameGroups = new Map<string, PotentialRename[]>();
 
@@ -243,17 +284,10 @@ export async function resolveRenames(operations: MigrationOperation[]): Promise<
 
   for (const dropped of droppedTables) {
     for (const added of addedTables) {
-      // Check if columns overlap (simple heuristic for potential rename)
-      const oldTable = droppedTables.find((t) => t.tableName === dropped.tableName);
-      if (!oldTable) continue;
+      // Use columns embedded in the dropTable op for overlap heuristic
+      const oldColNames = new Set((dropped.columns ?? []).map((c) => c.name));
+      if (oldColNames.size === 0) continue;
 
-      // Get columns from the addTable operation that matches the dropped table
-      const oldTableAddOp = operations.find(
-        (op): op is AddTableOp => op.type === 'addTable' && op.table.name === dropped.tableName,
-      );
-      if (!oldTableAddOp) continue;
-
-      const oldColNames = new Set(oldTableAddOp.table.columns.map((c) => c.name));
       const newColNames = added.table.columns.map((c) => c.name);
       const overlap = newColNames.filter((name) => oldColNames.has(name));
 
@@ -275,7 +309,7 @@ export async function resolveRenames(operations: MigrationOperation[]): Promise<
   const addedColumns = operations.filter((op): op is AddColumnOp => op.type === 'addColumn');
 
   for (const added of addedColumns) {
-    // Find all dropped columns in the same table
+    // Find dropped columns in the same table
     const candidates = droppedColumns.filter((d) => d.tableName === added.tableName);
 
     if (candidates.length > 0) {
@@ -297,6 +331,11 @@ export async function resolveRenames(operations: MigrationOperation[]): Promise<
     return operations;
   }
 
+  // In non-interactive mode, return operations as-is (drop + add, no rename resolution)
+  if (!interactive) {
+    return operations;
+  }
+
   // Prompt user for each group
   const resolvedOps = [...operations];
   const consumedDrops = new Set<string>(); // Track consumed drops: "type:tableName:columnName"
@@ -314,8 +353,8 @@ export async function resolveRenames(operations: MigrationOperation[]): Promise<
       continue;
     }
 
-    // Build options: "add" first, then available rename candidates
-    const options = [
+    // Build prompt options: "add" first, then available rename candidates
+    const promptOptions = [
       {
         value: 'add',
         label: firstRename.to,
@@ -328,21 +367,23 @@ export async function resolveRenames(operations: MigrationOperation[]): Promise<
       })),
     ];
 
-    const result = await select({
-      message: `Is ${pc.bold(firstRename.to)} ${entityLabel} added or renamed?`,
-      options,
-    });
+    if (!prompt) {
+      continue;
+    }
 
-    if (isCancel(result)) {
-      cancel('Operation cancelled.');
-      process.exit(0);
+    const result = await prompt(`Is ${firstRename.to} ${entityLabel} added or renamed?`, promptOptions);
+
+    if (typeof result === 'symbol') {
+      throw new CancellationError('Operation cancelled.');
     }
 
     if (result !== 'add') {
       // Extract the "from" name from "rename:xxx"
       const fromName = result.replace('rename:', '');
       const rename = availableRenames.find((r) => r.from === fromName);
-      if (!rename) continue;
+      if (!rename) {
+        continue;
+      }
 
       // Mark this drop as consumed
       consumedDrops.add(`${dropType}:${rename.tableName}:${rename.from}`);
@@ -350,23 +391,60 @@ export async function resolveRenames(operations: MigrationOperation[]): Promise<
       // Replace drop + add with rename operation
       const renameOp = rename.type === 'table' ? renameTable(rename.from, rename.to) : renameColumn(rename.tableName, rename.from, rename.to);
 
-      // Remove the drop and add operations, add the rename
+      // Remove the drop operation
+      const dropIdx = resolvedOps.findIndex((op) => {
+        if (op.type !== dropType) return false;
+        if (rename.type === 'table') {
+          return (op as DropTableOp).tableName === rename.from;
+        }
+        return (op as DropColumnOp).columnName === rename.from && (op as DropColumnOp).tableName === rename.tableName;
+      });
+
+      // Capture old columns before removing the drop op
+      let oldColNames: Set<string> | undefined;
+      if (dropIdx !== -1 && rename.type === 'table') {
+        const dropOp = resolvedOps[dropIdx] as DropTableOp;
+        oldColNames = new Set((dropOp.columns ?? []).map((c) => c.name));
+        resolvedOps.splice(dropIdx, 1);
+      } else if (dropIdx !== -1) {
+        resolvedOps.splice(dropIdx, 1);
+      }
+
+      // Remove the add operation
       const addType = rename.type === 'table' ? 'addTable' : 'addColumn';
-      const nameField = rename.type === 'table' ? 'tableName' : 'columnName';
+      const addIdx = resolvedOps.findIndex((op) => {
+        if (op.type !== addType) return false;
+        if (rename.type === 'table') {
+          return (op as AddTableOp).table?.name === rename.to;
+        }
+        return (op as AddColumnOp).column?.name === rename.to && (op as AddColumnOp).tableName === rename.tableName;
+      });
 
-      // Find and remove the drop operation
-      const dropIdx = resolvedOps.findIndex(
-        (op) => op.type === dropType && (op as DropTableOp | DropColumnOp)[nameField as keyof (DropTableOp | DropColumnOp)] === rename.from,
-      );
-      if (dropIdx !== -1) resolvedOps.splice(dropIdx, 1);
+      // For table renames: extract new columns from the removed addTable and add them
+      // as addColumn ops on the original table. The diff engine bundles all columns into
+      // addTable for a "new" table, so columns that didn't exist in the dropped table
+      // would be lost when we replace addTable with renameTable.
+      if (rename.type === 'table' && addIdx !== -1 && oldColNames) {
+        const addOp = resolvedOps[addIdx] as AddTableOp;
+        for (const col of addOp.table.columns) {
+          if (!oldColNames.has(col.name)) {
+            resolvedOps.push(addColumn(rename.from, col));
+          }
+        }
+      }
 
-      // Find and remove the add operation
-      const addIdx = resolvedOps.findIndex(
-        (op) =>
-          op.type === addType &&
-          ((op as AddTableOp).table?.name === rename.to || (op as AddColumnOp).column?.name === rename.to),
-      );
-      if (addIdx !== -1) resolvedOps.splice(addIdx, 1);
+      if (addIdx !== -1) {
+        resolvedOps.splice(addIdx, 1);
+      }
+
+      // For table renames: redirect any addColumn ops from the new name to the original.
+      if (rename.type === 'table') {
+        for (const op of resolvedOps) {
+          if (op.type === 'addColumn' && op.tableName === rename.to) {
+            op.tableName = rename.from;
+          }
+        }
+      }
 
       // Add the rename operation
       resolvedOps.push(renameOp);
