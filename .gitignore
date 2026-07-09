@@ -36,10 +36,14 @@ report.[0-9]_.[0-9]_.[0-9]_.[0-9]_.json
 # SQLite databases
 *.db
 .local
+scratch
 
 # Test database schemas
 db/
 test-migrations/
 test-migrate-temp/
 flint
+flint.config.ts
+
+.claude
 flint.config.ts

@@ -7,6 +7,7 @@
   "env": {
     "builtin": true
   },
+
   "ignorePatterns": [
     "**/.nx/**",
     "**/.svelte-kit/**",
