@@ -7,5 +7,17 @@
     "emitDeclarationOnly": true,
     "noEmit": false
   },
-  "include": ["src/index.ts", "src/entries/table.ts", "src/entries/expressions.ts"]
+  "include": [
+    "src/index.ts",
+    "src/entries/bun-sqlite.ts",
+    "src/entries/better-sqlite3.ts",
+    "src/entries/libsql.ts",
+    "src/entries/libsql-web.ts",
+    "src/entries/turso-sync.ts",
+    "src/entries/turso.ts",
+    "src/entries/table.ts",
+    "src/entries/expressions.ts",
+    "src/entries/config.ts",
+    "src/migration/index.ts"
+  ]
 }
