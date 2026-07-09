@@ -53,6 +53,17 @@ function indexToSQL(idx: SerializedIndex, tableName: string): string {
 }
 
 // ---------------------------------------------------------------------------
+// Format default value for SQL
+// ---------------------------------------------------------------------------
+
+function formatDefault(value: unknown): string {
+  if (value === null) return 'NULL';
+  if (typeof value === 'string') return `'${value.replace(/'/g, "''")}'`;
+  if (typeof value === 'boolean') return value ? '1' : '0';
+  return String(value);
+}
+
+// ---------------------------------------------------------------------------
 // Operation → SQL
 // ---------------------------------------------------------------------------
 
@@ -89,6 +100,34 @@ function operationToSQL(op: MigrationOperation): string {
 
     case 'dropIndex':
       return `DROP INDEX ${op.indexName}`;
+
+    case 'modifyColumn': {
+      const stmts: string[] = [];
+
+      // NOT NULL — SQLite 3.25.0+ supports ALTER COLUMN SET NOT NULL
+      if (op.changes.isNotNull !== undefined && op.changes.isNotNull) {
+        stmts.push(`ALTER TABLE ${op.tableName} ALTER COLUMN ${op.columnName} SET NOT NULL`);
+      }
+
+      // DEFAULT — SQLite 3.25.0+ supports ALTER COLUMN SET DEFAULT / DROP DEFAULT
+      if (op.changes.hasDefault !== undefined) {
+        if (op.changes.hasDefault && op.changes.defaultValue !== undefined) {
+          const val = formatDefault(op.changes.defaultValue);
+          stmts.push(`ALTER TABLE ${op.tableName} ALTER COLUMN ${op.columnName} SET DEFAULT ${val}`);
+        } else if (!op.changes.hasDefault) {
+          stmts.push(`ALTER TABLE ${op.tableName} ALTER COLUMN ${op.columnName} DROP DEFAULT`);
+        }
+      }
+
+      return stmts.join(';\n');
+    }
+
+    case 'modifyIndex': {
+      // Index modifications require DROP + CREATE (no ALTER INDEX in SQLite)
+      const unique = op.to.unique ? 'UNIQUE ' : '';
+      const columns = op.to.columns.join(', ');
+      return `DROP INDEX IF EXISTS ${op.indexName};\nCREATE ${unique}INDEX ${op.indexName} ON ${op.tableName} (${columns})`;
+    }
   }
 }
 

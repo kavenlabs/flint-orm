@@ -3,12 +3,13 @@
 // flint CLI — migration generation for flint-orm
 // ---------------------------------------------------------------------------
 
-import { parseArgs } from 'node:util';
+import { parseArgs, styleText } from 'node:util';
 import { statSync, readdirSync, existsSync, readFileSync } from 'node:fs';
 import { join, resolve, isAbsolute } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import type { AnyTable, TableDef } from './schema/table.js';
 import type { SchemaState } from './migration/types.js';
+import { intro, outro, log, cancel, isCancel, pc, note } from './cli/ui.js';
 
 // ---------------------------------------------------------------------------
 // Config loading
@@ -94,23 +95,20 @@ async function cmdGenerate(args: ReturnType<typeof parseArgs>['values'], config:
   const name = typeof args.name === 'string' ? args.name : undefined;
   const preview = args.preview === true;
 
-  console.log(`🔍 Discovering schema from: ${config.schema}`);
+  log.info(`Discovering schema from: ${config.schema}`);
   const tables = await discoverTables(config.schema);
 
   if (tables.length === 0) {
-    console.error('❌ No table() definitions found in schema path.');
+    cancel('No table() definitions found in schema path.');
     process.exit(1);
   }
 
-  console.log(`📦 Found ${tables.length} table(s):`);
-  for (const t of tables) {
-    console.log(`   - ${(t as Record<string, Record<string, unknown>>)._?.name ?? 'unknown'}`);
-  }
+  log.info(`Found ${tables.length} table(s): ${tables.map((t) => (t as Record<string, Record<string, unknown>>)._?.name ?? 'unknown').join(', ')}`);
 
   if (preview) {
     // Dynamic import of migration functions
     const { serializeSchema } = await import('./migration/serialize.js');
-    const { diffSchemas, emptyState } = await import('./migration/diff.js');
+    const { diffSchemas, emptyState, resolveRenames } = await import('./migration/diff.js');
     const { generateSQL } = await import('./migration/sql.js');
 
     // Find latest state
@@ -132,20 +130,20 @@ async function cmdGenerate(args: ReturnType<typeof parseArgs>['values'], config:
     if (!previousState) previousState = emptyState();
 
     const currentState = serializeSchema(tables as AnyTable[]);
-    const operations = diffSchemas(previousState, currentState);
+    const rawOps = diffSchemas(previousState, currentState);
 
-    if (operations.length === 0) {
-      console.log('\n✅ No changes detected — schema is already up to date.');
+    if (rawOps.length === 0) {
+      outro('Schema is already up to date.');
       return;
     }
 
+    // Resolve renames interactively
+    const operations = await resolveRenames(rawOps);
+
     const sql = generateSQL(operations);
-    const previewLabel = name ? `${name}` : 'unnamed';
-    console.log(`\n--- Preview: ${previewLabel} ---`);
-    console.log(`   Operations: ${operations.length}`);
-    console.log(`   Migrations dir: ${config.migrations}`);
-    console.log(`\n--- SQL ---\n${sql}\n`);
-    console.log('(dry run, no files written)');
+    log.info(`Operations: ${operations.length}`);
+    note(sql, 'SQL', { format: (text) => styleText('dim', text) });
+    log.info('(dry run, no files written)');
     return;
   }
 
@@ -153,13 +151,14 @@ async function cmdGenerate(args: ReturnType<typeof parseArgs>['values'], config:
   const { generate } = await import('./migration/generate.js');
 
   try {
-    const result = generate(tables as TableDef<any>[], resolve(process.cwd(), (config.migrations ?? './flint') as string), name);
-    console.log(`\n✅ Migration generated: ${result.folderName}`);
-    console.log(`   Operations: ${result.operations.length}`);
-    console.log(`\n--- SQL Preview ---\n${result.sql}`);
+    const migrationsDir = resolve(process.cwd(), config.migrations ?? './flint');
+    const result = await generate(tables as TableDef<any>[], migrationsDir, name);
+    log.info(`Operations: ${result.operations.length}`);
+    note(result.sql, 'SQL', { format: (text) => styleText('dim', text) });
+    log.success(`Migration generated: ${migrationsDir}/${result.folderName}`);
   } catch (err: unknown) {
     if (err instanceof Error && err.message.includes('No changes detected')) {
-      console.log('\n✅ No changes detected — schema is already up to date.');
+      outro('Schema is already up to date.');
     } else {
       throw err;
     }
@@ -184,25 +183,25 @@ async function cmdMigrate(args: ReturnType<typeof parseArgs>['values'], config: 
       const status = getMigrationStatus(db, migrationsDir);
 
       if (status.applied.length === 0 && status.pending.length === 0) {
-        console.log('✅ No migrations found.');
+        outro('No migrations found.');
         return;
       }
 
       if (status.applied.length > 0) {
-        console.log('\n📋 Applied migrations:');
+        log.info('Applied migrations:');
         for (const m of status.applied) {
-          console.log(`   ✓ ${m.name} (${m.folderName})`);
+          log.success(`${m.name} (${m.folderName})`);
         }
       }
 
       if (status.pending.length > 0) {
-        console.log('\n⏳ Pending migrations:');
+        log.warn('Pending migrations:');
         for (const m of status.pending) {
-          console.log(`   ○ ${m.name} (${m.folderName})`);
+          log.message(`  ○ ${m.name} (${m.folderName})`);
         }
       }
 
-      console.log(`\n   ${status.applied.length} applied, ${status.pending.length} pending`);
+      log.info(`${status.applied.length} applied, ${status.pending.length} pending`);
       return;
     }
 
@@ -212,16 +211,16 @@ async function cmdMigrate(args: ReturnType<typeof parseArgs>['values'], config: 
     });
 
     if (result.applied.length === 0) {
-      console.log('\n✅ No pending migrations — database is up to date.');
+      outro('No pending migrations — database is up to date.');
     } else {
-      console.log(`\n🚀 ${dryRun ? 'Would apply' : 'Applied'} ${result.applied.length} migration(s):`);
-      for (const name of result.applied) {
-        console.log(`   ✓ ${name}`);
+      log.info(`${dryRun ? 'Would apply' : 'Applied'} ${result.applied.length} migration(s):`);
+      for (const appliedName of result.applied) {
+        log.success(appliedName);
       }
     }
 
     if (result.skipped.length > 0 && !dryRun) {
-      console.log(`\n⏭  Skipped ${result.skipped.length} already applied migration(s)`);
+      log.info(`Skipped ${result.skipped.length} already applied migration(s)`);
     }
   } finally {
     db.close();
@@ -233,9 +232,7 @@ async function cmdMigrate(args: ReturnType<typeof parseArgs>['values'], config: 
 // ---------------------------------------------------------------------------
 
 function printHelp(): void {
-  console.log(`
-flint — migration CLI for flint-orm
-
+  log.message(`
 Usage:
   flint <command> [options]
 
@@ -294,13 +291,17 @@ async function main(): Promise<void> {
       await cmdMigrate(values, config);
       break;
     default:
-      console.error(`❌ Unknown command: ${command}`);
+      cancel(`Unknown command: ${command}`);
       printHelp();
       process.exit(1);
   }
 }
 
 main().catch((err) => {
-  console.error(err);
+  if (isCancel(err)) {
+    cancel('Operation cancelled.');
+  } else {
+    cancel(err.message ?? 'An error occurred');
+  }
   process.exit(1);
 });

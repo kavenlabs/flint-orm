@@ -11,7 +11,8 @@
     "stripInternal": true,
 
     "paths": {
-      "~/*": ["./src/*"]
+      "~/*": ["./src/*"],
+      "flint-orm/*": ["./src/*"]
     },
 
     // Bundler mode
@@ -31,6 +32,5 @@
     "noUnusedLocals": false,
     "noUnusedParameters": false,
     "noPropertyAccessFromIndexSignature": false
-  },
-  "exclude": ["test-migrations", "flint"]
+  }
 }

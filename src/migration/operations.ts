@@ -12,6 +12,8 @@ import type {
   RenameColumnOp,
   CreateIndexOp,
   DropIndexOp,
+  ModifyColumnOp,
+  ModifyIndexOp,
   SerializedColumn,
   SerializedIndex,
   SerializedTable,
@@ -47,4 +49,12 @@ export function createIndex(tableName: string, index: SerializedIndex): CreateIn
 
 export function dropIndex(indexName: string): DropIndexOp {
   return { type: 'dropIndex', indexName };
+}
+
+export function modifyColumn(tableName: string, columnName: string, changes: ModifyColumnOp['changes']): ModifyColumnOp {
+  return { type: 'modifyColumn', tableName, columnName, changes };
+}
+
+export function modifyIndex(tableName: string, indexName: string, from: SerializedIndex, to: SerializedIndex): ModifyIndexOp {
+  return { type: 'modifyIndex', tableName, indexName, from, to };
 }

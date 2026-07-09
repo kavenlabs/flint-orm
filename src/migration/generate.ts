@@ -8,7 +8,7 @@ import { join } from 'path';
 import type { TableDef } from '../schema/table.js';
 import type { SchemaState, MigrationOperation, SerializedColumn, SerializedIndex, SerializedTable } from './types.js';
 import { serializeSchema } from './serialize.js';
-import { diffSchemas, emptyState } from './diff.js';
+import { diffSchemas, emptyState, resolveRenames } from './diff.js';
 import { generateSQL } from './sql.js';
 
 // ---------------------------------------------------------------------------
@@ -258,6 +258,10 @@ function serializeOpArg(op: MigrationOperation): string {
       return `${JSON.stringify(op.tableName)}, ${serializeIndexArg(op.index)}`;
     case 'dropIndex':
       return JSON.stringify(op.indexName);
+    case 'modifyColumn':
+      return `${JSON.stringify(op.tableName)}, ${JSON.stringify(op.columnName)}, ${JSON.stringify(op.changes)}`;
+    case 'modifyIndex':
+      return `${JSON.stringify(op.tableName)}, ${JSON.stringify(op.indexName)}, ${serializeIndexArg(op.from)}, ${serializeIndexArg(op.to)}`;
   }
 }
 
@@ -306,15 +310,18 @@ export interface GenerateResult {
   state: SchemaState;
 }
 
-export function generate(tables: TableDef<any>[], migrationsDir: string, migrationName?: string): GenerateResult {
+export async function generate(tables: TableDef<any>[], migrationsDir: string, migrationName?: string): Promise<GenerateResult> {
   const previous = findLatestState(migrationsDir) ?? emptyState();
   const current = serializeSchema(tables);
 
-  const operations = diffSchemas(previous, current);
+  const rawOps = diffSchemas(previous, current);
 
-  if (operations.length === 0) {
+  if (rawOps.length === 0) {
     throw new Error('No changes detected — schema is already up to date.');
   }
+
+  // Resolve renames interactively
+  const operations = await resolveRenames(rawOps);
 
   const sql = generateSQL(operations);
   const folderName = generateFolderName(migrationName);

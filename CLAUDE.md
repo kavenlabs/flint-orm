@@ -4,11 +4,40 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Commands
 
+- **Build**: `bun run build` (compiles to `./dist/` via Bun + `tsc`)
 - **Typecheck**: `bun typecheck`
 - **Lint**: `bun lint` (oxlint)
 - **Format**: `bun format` (oxfmt)
 - **Run tests**: `bun test`
 - **Run a single test**: `bun test --test-name-pattern "test name"` or `bun test src/test.test.ts`
+
+### CLI (flint)
+
+```bash
+# Generate migration from schema changes
+flint generate --name init_schema
+
+# Preview SQL without writing files
+flint generate --preview
+
+# Apply pending migrations
+flint migrate
+
+# Check migration status
+flint migrate --status
+```
+
+### Config (`flint.config.ts`)
+
+```ts
+import { defineConfig } from "flint-orm/config";
+
+export default defineConfig({
+  schema: "./src/schema",
+  migrations: "./flint",
+  database: { url: "./app.db" },
+});
+```
 
 ## Architecture
 
@@ -66,8 +95,41 @@ Joins support auto-discovery of foreign key conditions via `.references()` on co
 - `.columns()` — narrow selected columns (type-safe Pick)
 - `.returning()` — on INSERT/UPDATE/DELETE, return affected rows
 - `.onConflictDoNothing()` / `.onConflictDoUpdate()` — upsert support
-- `db.raw(sql, params)` — execute raw SQL directly
+- `db.$run(sql, params)` — execute raw SQL directly
+- `db.$client.prepare(sql)` — access underlying `bun:sqlite` client
 - `db.batch(queries)` — run multiple queries in a transaction
+
+### snakeCase Tables
+
+Auto-converts camelCase keys to snake_case SQL names:
+
+```ts
+import { snakeCase, text } from 'flint-orm';
+
+const users = snakeCase.table('users', {
+  id: text().primaryKey(),      // SQL: id
+  firstName: text().notNull(),  // SQL: first_name
+  createdAt: text(),            // SQL: created_at
+});
+```
+
+### Migration System
+
+- `flint generate` serializes `table()` definitions, diffs against last snapshot, writes migration folder with TypeScript operations
+- `flint migrate` reads pending migrations, executes SQL via `batch()` (atomic), records applied migrations in `__flint_migrations`
+- Tables are topologically sorted by foreign key dependencies (Kahn's algorithm)
+
+```ts
+import { generate, migrate, getMigrationStatus, serializeSchema, diffSchemas, generateSQL } from "flint-orm/migration";
+```
+
+## Agent Guidelines
+
+- **Ask before assuming** — If a request is ambiguous, ask clarifying questions before taking action. Don't infer intent.
+- **Don't write code until asked** — When the user describes a problem or asks a question, analyze and discuss first. Only write code when explicitly requested.
+- **Present options** — When there are multiple valid approaches, present them with trade-offs rather than picking one unilaterally.
+- **Read before editing** — Always read relevant files before making changes. Understand the existing patterns first.
+- **Verify before claiming** — Don't state something works or is correct without checking. Run tests, typecheck, or verify against the code.
 
 ## Conventions
 

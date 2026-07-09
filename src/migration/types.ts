@@ -85,7 +85,37 @@ export interface DropIndexOp {
   indexName: string;
 }
 
-export type MigrationOperation = AddTableOp | DropTableOp | RenameTableOp | AddColumnOp | DropColumnOp | RenameColumnOp | CreateIndexOp | DropIndexOp;
+export interface ModifyColumnOp {
+  type: 'modifyColumn';
+  tableName: string;
+  columnName: string;
+  changes: {
+    isNotNull?: boolean;
+    isUnique?: boolean;
+    hasDefault?: boolean;
+    defaultValue?: unknown;
+  };
+}
+
+export interface ModifyIndexOp {
+  type: 'modifyIndex';
+  tableName: string;
+  indexName: string;
+  from: SerializedIndex;
+  to: SerializedIndex;
+}
+
+export type MigrationOperation =
+  | AddTableOp
+  | DropTableOp
+  | RenameTableOp
+  | AddColumnOp
+  | DropColumnOp
+  | RenameColumnOp
+  | CreateIndexOp
+  | DropIndexOp
+  | ModifyColumnOp
+  | ModifyIndexOp;
 
 // ---------------------------------------------------------------------------
 // Migration file shape
