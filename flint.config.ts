@@ -1,6 +1,7 @@
 import { defineConfig } from '~/config';
 
 export default defineConfig({
-  url: './flint.db',
+  driver: 'libsql',
   schema: './db',
+  database: { url: process.env.DATABASE_URL! },
 });

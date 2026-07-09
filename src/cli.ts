@@ -9,7 +9,7 @@ import { join, resolve, isAbsolute } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import type { AnyTable, TableDef } from './schema/table.js';
 import type { SchemaState } from './migration/types.js';
-import { intro, outro, log, cancel, isCancel, select, pc, note } from './cli/ui.js';
+import { outro, log, cancel, isCancel, select, pc, note } from './cli/ui.js';
 import { CancellationError } from './migration/diff.js';
 import type { RenamePrompt } from './migration/diff.js';
 
@@ -18,8 +18,10 @@ import type { RenamePrompt } from './migration/diff.js';
 // ---------------------------------------------------------------------------
 
 interface FlintConfig {
-  /** Path to the SQLite database file. */
-  url: string;
+  /** Which SQLite driver to use. */
+  driver: string;
+  /** Database connection details. */
+  database: { url: string; authToken?: string };
   /** Path to schema file or directory. */
   schema: string;
   /** Path to migrations directory (default: ./flint). */
@@ -173,21 +175,65 @@ async function cmdGenerate(args: ReturnType<typeof parseArgs>['values'], config:
 }
 
 async function cmdMigrate(args: ReturnType<typeof parseArgs>['values'], config: FlintConfig): Promise<void> {
-  const { Database } = await import('bun:sqlite');
   const { migrate, getMigrationStatus } = await import('./migration/migrate.js');
 
   const migrationsDir = resolve(process.cwd(), config.migrations ?? './flint');
   const dryRun = args['dry-run'] === true;
   const statusOnly = args.status === true;
-  const name = typeof args.name === 'string' ? args.name : undefined;
 
-  // Open database from config
-  const dbUrl = resolve(process.cwd(), config.url);
-  const db = new Database(dbUrl);
+  // Dynamically create executor based on configured driver
+  const isLocalDriver = config.driver === 'bun-sqlite' || config.driver === 'better-sqlite3';
+  const dbUrl = isLocalDriver ? resolve(process.cwd(), config.database.url) : config.database.url;
+
+  let executor: import('./executor').Executor;
+
+  switch (config.driver) {
+    case 'bun-sqlite': {
+      const { BunSqliteExecutor } = await import('./drivers/bun-sqlite');
+      const { Database } = await import('bun:sqlite');
+      executor = new BunSqliteExecutor(new Database(dbUrl));
+      break;
+    }
+    case 'better-sqlite3': {
+      const { BetterSqlite3Executor } = await import('./drivers/better-sqlite3');
+      const Database = (await import('better-sqlite3')).default;
+      executor = new BetterSqlite3Executor(new Database(dbUrl));
+      break;
+    }
+    case 'libsql': {
+      const { LibsqlExecutor } = await import('./drivers/libsql');
+      const { createClient: createLibsqlClient } = await import('@libsql/client');
+      executor = new LibsqlExecutor(createLibsqlClient({ url: dbUrl, authToken: config.database.authToken }));
+      break;
+    }
+    case 'libsql-web': {
+      const { LibsqlWebExecutor } = await import('./drivers/libsql-web');
+      const { createClient: createLibsqlWebClient } = await import('@libsql/client/web');
+      executor = new LibsqlWebExecutor(createLibsqlWebClient({ url: dbUrl, authToken: config.database.authToken }));
+      break;
+    }
+    case 'turso-sync': {
+      const { TursoSyncExecutor } = await import('./drivers/turso-sync');
+      const { connect } = await import('@tursodatabase/sync');
+      const db = await connect({ path: dbUrl, authToken: config.database.authToken });
+      executor = new TursoSyncExecutor(db);
+      break;
+    }
+    case 'turso': {
+      const { TursoExecutor } = await import('./drivers/turso');
+      const { connect } = await import('@tursodatabase/database');
+      const db = await connect(dbUrl);
+      executor = new TursoExecutor(db);
+      break;
+    }
+    default:
+      cancel(`Unsupported driver: ${config.driver}`);
+      process.exit(1);
+  }
 
   try {
     if (statusOnly) {
-      const status = getMigrationStatus(db, migrationsDir);
+      const status = await getMigrationStatus(executor, migrationsDir);
 
       if (status.applied.length === 0 && status.pending.length === 0) {
         outro('No migrations found.');
@@ -212,7 +258,7 @@ async function cmdMigrate(args: ReturnType<typeof parseArgs>['values'], config: 
       return;
     }
 
-    const result = await migrate(db, {
+    const result = await migrate(executor, {
       migrationsDir,
       dryRun,
     });
@@ -230,7 +276,7 @@ async function cmdMigrate(args: ReturnType<typeof parseArgs>['values'], config: 
       log.info(`Skipped ${result.skipped.length} already applied migration(s)`);
     }
   } finally {
-    db.close();
+    executor.close();
   }
 }
 
