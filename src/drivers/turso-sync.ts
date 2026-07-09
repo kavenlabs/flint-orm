@@ -1,0 +1,76 @@
+// ---------------------------------------------------------------------------
+// @tursodatabase/sync driver adapter
+// ---------------------------------------------------------------------------
+
+import { connect } from '@tursodatabase/sync';
+import type { Database } from '@tursodatabase/sync';
+import { resolve } from 'node:path';
+import type { Executor } from '../executor';
+import { createClient } from '../flint';
+
+/** Convert undefined params to null — @tursodatabase/sync rejects undefined. */
+function sanitize(params: unknown[]): unknown[] {
+  return params.map((p) => (p === undefined ? null : p));
+}
+
+/** Async executor backed by @tursodatabase/sync. */
+export class TursoSyncExecutor implements Executor {
+  #db: Database;
+
+  constructor(db: Database) {
+    this.#db = db;
+  }
+
+  async all(sql: string, params: unknown[]): Promise<unknown[]> {
+    return this.#db.all(sql, ...sanitize(params));
+  }
+
+  async get(sql: string, params: unknown[]): Promise<unknown> {
+    return this.#db.get(sql, ...sanitize(params)) ?? null;
+  }
+
+  async run(sql: string, params: unknown[]): Promise<void> {
+    await this.#db.run(sql, ...sanitize(params));
+  }
+
+  async transaction(fn: () => void | Promise<void>): Promise<void> {
+    await this.#db.exec('BEGIN');
+    try {
+      await fn();
+      await this.#db.exec('COMMIT');
+    } catch (e) {
+      await this.#db.exec('ROLLBACK');
+      throw e;
+    }
+  }
+
+  close(): void {
+    this.#db.close();
+  }
+}
+
+export interface TursoSyncConnectionDetails {
+  /** Local path for the synced database files. */
+  url: string;
+  /** Remote Turso database URL (libsql://...). */
+  syncUrl?: string;
+  /** Auth token for the remote database. */
+  authToken?: string;
+}
+
+/**
+ * Create a flint database client using @tursodatabase/sync.
+ *
+ * @example
+ * import { flint } from 'flint-orm/turso-sync'
+ * const db = flint({ url: './local.db', syncUrl: 'libsql://db.turso.io', authToken: '...' })
+ */
+export async function flint(details: TursoSyncConnectionDetails) {
+  const localPath = details.url.includes('://') ? details.url : resolve(details.url);
+  const db = await connect({
+    path: localPath,
+    url: details.syncUrl,
+    authToken: details.authToken,
+  });
+  return createClient(new TursoSyncExecutor(db));
+}
