@@ -1,6 +1,4 @@
-// flint() factory
-import { Database } from 'bun:sqlite';
-import type { SQLQueryBindings } from 'bun:sqlite';
+import type { Executor } from './executor';
 import { SelectFromBuilder, InsertValuesBuilder, UpdateSetBuilder, DeleteBuilder, JoinStage1 } from './query/builder';
 import type { Executable, SelectStage1, InsertStage1, UpdateStage1, JoinSelectStage1 } from './query/builder';
 import { count, countColumn, sum, avg, min, max } from './query/aggregates';
@@ -12,22 +10,29 @@ import type { ColumnDef } from './schema/columns';
 export type { Executable, SelectStage1, InsertStage1, UpdateStage1, JoinSelectStage1, JoinBuilder, SingleJoinBuilder } from './query/builder';
 export type { JoinResult } from './query/builder';
 
-// Connection details
-export interface ConnectionDetails {
-  /** Connection details for the SQLite database. */
-  url: string;
+/**
+ * A raw SQL expression with parameters.
+ */
+export interface SQLExpression {
+  sql: string;
+  params: unknown[];
 }
 
 /**
- * Create a flint database client.
+ * Create a flint database client from an executor.
+ *
+ * This is the shared core — driver-specific entry points call this
+ * with their executor implementation.
  *
  * @example
- * const db = flint({ url: "app.db" });
+ * // Used internally by driver entry points:
+ * import { createClient } from '../flint'
+ * export function flint(details) {
+ *   const executor = new BunSqliteExecutor(new Database(details.url))
+ *   return createClient(executor)
+ * }
  */
-export function flint(details: ConnectionDetails) {
-  // For now, only bun:sqlite. Future: libsql support.
-  const client = new Database(details.url);
-
+export function createClient(executor: Executor) {
   return {
     /**
      * Start a SELECT query — call `.from(table)` next.
@@ -35,7 +40,7 @@ export function flint(details: ConnectionDetails) {
      * @example
      * const rows = db.select().from(users).execute()
      */
-    select: (): SelectStage1 => new SelectFromBuilder(client),
+    select: (): SelectStage1 => new SelectFromBuilder(executor),
 
     /**
      * Start an INSERT — call `.values(row)` next.
@@ -43,7 +48,7 @@ export function flint(details: ConnectionDetails) {
      * @example
      * db.insert(users).values({ id: "u1", name: "Alice" }).execute()
      */
-    insert: <T extends AnyTable>(table: T): InsertStage1<T> => new InsertValuesBuilder<T>(client, table._.name, table),
+    insert: <T extends AnyTable>(table: T): InsertStage1<T> => new InsertValuesBuilder<T>(executor, table._.name, table),
 
     /**
      * Start an UPDATE — call `.set(partial)` next.
@@ -51,7 +56,7 @@ export function flint(details: ConnectionDetails) {
      * @example
      * db.update(users).set({ name: "Bob" }).where(eq(users.id, "u1")).execute()
      */
-    update: <T extends AnyTable>(table: T): UpdateStage1<T> => new UpdateSetBuilder<T>(client, table._.name, table),
+    update: <T extends AnyTable>(table: T): UpdateStage1<T> => new UpdateSetBuilder<T>(executor, table._.name, table),
 
     /**
      * Start a DELETE — call `.where(condition)` next.
@@ -59,7 +64,7 @@ export function flint(details: ConnectionDetails) {
      * @example
      * db.delete(users).where(eq(users.id, "u1")).execute()
      */
-    delete: <T extends AnyTable>(table: T) => new DeleteBuilder<T>(client, table._.name, table),
+    delete: <T extends AnyTable>(table: T) => new DeleteBuilder<T>(executor, table._.name, table),
 
     /**
      * Start a LEFT JOIN — call `.on(child)` next.
@@ -67,7 +72,7 @@ export function flint(details: ConnectionDetails) {
      * @example
      * db.leftJoin(users).on(posts).execute()
      */
-    leftJoin: <Parent extends AnyTable>(parent: Parent): JoinSelectStage1<Parent> => new JoinStage1(client, parent, parent._.name, 'left'),
+    leftJoin: <Parent extends AnyTable>(parent: Parent): JoinSelectStage1<Parent> => new JoinStage1(executor, parent, parent._.name, 'left'),
 
     /**
      * Start an INNER JOIN — call `.on(child)` next.
@@ -75,7 +80,7 @@ export function flint(details: ConnectionDetails) {
      * @example
      * db.innerJoin(users).on(posts).execute()
      */
-    innerJoin: <Parent extends AnyTable>(parent: Parent): JoinSelectStage1<Parent> => new JoinStage1(client, parent, parent._.name, 'inner'),
+    innerJoin: <Parent extends AnyTable>(parent: Parent): JoinSelectStage1<Parent> => new JoinStage1(executor, parent, parent._.name, 'inner'),
 
     /**
      * Run multiple queries atomically in a single transaction.
@@ -88,82 +93,54 @@ export function flint(details: ConnectionDetails) {
      */
     batch: (queries: Executable[]) => {
       const stmts = queries.map((q) => q.toSQL());
-      const tx = client.transaction(() => {
-        for (const { sql: query, params } of stmts) {
-          client.prepare(query).run(...(params as SQLQueryBindings[]));
+      return executor.transaction(async () => {
+        for (const stmt of stmts) {
+          await executor.run(stmt.sql, stmt.params);
         }
       });
-      tx();
     },
 
     /**
      * Count all rows in a table, optionally filtered by a condition.
-     *
-     * @example
-     * db.count(users)
      */
-    count: <T extends AnyTable>(table: T, condition?: Condition) => count(client, table, condition),
+    count: <T extends AnyTable>(table: T, condition?: Condition) => count(executor, table, condition),
 
     /**
      * Count non-null values of a column, optionally filtered by a condition.
-     *
-     * @example
-     * db.countColumn(users, users.email)
      */
     countColumn: <T extends AnyTable, C extends ColumnDef<any, any>>(table: T, column: C, condition?: Condition) =>
-      countColumn(client, table, column, condition),
+      countColumn(executor, table, column, condition),
 
     /**
      * Sum non-null values of a column, optionally filtered by a condition.
-     *
-     * @example
-     * db.sum(orders, orders.amount)
      */
-    sum: <T extends AnyTable, C extends ColumnDef<any, any>>(table: T, column: C, condition?: Condition) => sum(client, table, column, condition),
+    sum: <T extends AnyTable, C extends ColumnDef<any, any>>(table: T, column: C, condition?: Condition) => sum(executor, table, column, condition),
 
     /**
      * Average non-null values of a column, optionally filtered by a condition.
-     *
-     * @example
-     * db.avg(users, users.age)
      */
-    avg: <T extends AnyTable, C extends ColumnDef<any, any>>(table: T, column: C, condition?: Condition) => avg(client, table, column, condition),
+    avg: <T extends AnyTable, C extends ColumnDef<any, any>>(table: T, column: C, condition?: Condition) => avg(executor, table, column, condition),
 
     /**
      * Find the minimum non-null value of a column, optionally filtered by a condition.
-     *
-     * @example
-     * db.min(users, users.age)
      */
-    min: <T extends AnyTable, C extends ColumnDef<any, any>>(table: T, column: C, condition?: Condition) => min(client, table, column, condition),
+    min: <T extends AnyTable, C extends ColumnDef<any, any>>(table: T, column: C, condition?: Condition) => min(executor, table, column, condition),
 
     /**
      * Find the maximum non-null value of a column, optionally filtered by a condition.
-     *
-     * @example
-     * db.max(users, users.age)
      */
-    max: <T extends AnyTable, C extends ColumnDef<any, any>>(table: T, column: C, condition?: Condition) => max(client, table, column, condition),
+    max: <T extends AnyTable, C extends ColumnDef<any, any>>(table: T, column: C, condition?: Condition) => max(executor, table, column, condition),
 
     /**
      * Execute raw SQL directly against the database.
-     *
-     * @example
-     * db.$run("CREATE TABLE test (id INTEGER PRIMARY KEY, name TEXT)")
      */
-    $run(sql: string, ...params: SQLQueryBindings[]) {
-      return client.prepare(sql).run(...params);
+    $run(query: string, ...params: unknown[]) {
+      return executor.run(query, params);
     },
 
-    /** Direct access to the underlying `bun:sqlite` client. */
-    $client: client,
+    /** Direct access to the underlying executor. */
+    $executor: executor,
   };
-}
-
-/** A raw SQL expression with parameters. */
-export interface SQLExpression {
-  sql: string;
-  params: unknown[];
 }
 
 /**

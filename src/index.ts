@@ -1,10 +1,11 @@
 // -----------------------------------------------------------------------
-// flint-orm — public API
+// flint-orm — public API (shared, driver-agnostic)
 // -----------------------------------------------------------------------
 
-// Main entry: flint() factory + sql template
-export { flint, sql } from './flint';
-export type { ConnectionDetails, SQLExpression, Executable, SelectStage1, InsertStage1, UpdateStage1 } from './flint';
+// Core: sql template + createClient (for custom driver adapters)
+export { sql, createClient } from './flint';
+export type { SQLExpression, Executable, SelectStage1, InsertStage1, UpdateStage1 } from './flint';
+export type { Executor } from './executor';
 
 // Schema: table/column definitions (flint-orm/table)
 export { text, integer, boolean, json, date, real } from './schema/columns';

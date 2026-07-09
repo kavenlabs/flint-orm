@@ -1,10 +1,9 @@
-// Query builders
-import type { SQLQueryBindings } from 'bun:sqlite';
 import type { ColumnDef } from '../schema/columns';
 import type { Condition } from './conditions';
 import { compileConditions, eq } from './conditions';
 import type { AnyTable, InferRow, InsertRow } from '../schema/table';
 import { FlintValidationError, FlintQueryError } from '../errors';
+import type { Executor } from '../executor';
 
 // -----------------------------------------------------------------------
 // Type helpers
@@ -23,12 +22,6 @@ export type NarrowRow<T, C extends keyof T> = { [K in C]: T[K] };
  */
 export type Prettify<T> = { [K in keyof T]: T[K] } & {};
 
-// @internal Shared helpers
-/** @internal Cast params array to what bun:sqlite expects. */
-function bind(params: unknown[]): SQLQueryBindings[] {
-  return params as SQLQueryBindings[];
-}
-
 /** @internal Get a column by key from a table definition. */
 function getCol(tbl: AnyTable, key: string): ColumnDef<any, any> {
   const col = (tbl as Record<string, ColumnDef<any, any>>)[key];
@@ -36,9 +29,9 @@ function getCol(tbl: AnyTable, key: string): ColumnDef<any, any> {
   return col;
 }
 
-/** @internal Get column entries from a table (filters out `._`). */
+/** @internal Get column entries from a table (filters out `._` and `__indexes`). */
 function columnEntries(tbl: AnyTable): [string, ColumnDef<any, any>][] {
-  return Object.entries(tbl).filter(([k]) => k !== '_') as [string, ColumnDef<any, any>][];
+  return Object.entries(tbl).filter(([k]) => k !== '_' && k !== '__indexes') as [string, ColumnDef<any, any>][];
 }
 
 /** @internal Decode a raw SQLite row into the full logical TS shape. */
@@ -148,13 +141,6 @@ export interface Executable {
 }
 
 /** @internal Anything that can run SQL. */
-export interface DatabaseClient {
-  prepare(sql: string): {
-    all(...params: SQLQueryBindings[]): unknown[];
-    get(...params: SQLQueryBindings[]): unknown;
-    run(...params: SQLQueryBindings[]): void;
-  };
-}
 
 /** @internal */
 type JoinType = 'left' | 'inner';
@@ -167,16 +153,16 @@ export interface SelectStage1 {
 
 /** @internal Lightweight wrapper that only exposes `.from()`. */
 export class SelectFromBuilder implements SelectStage1 {
-  #client: DatabaseClient;
+  #executor: Executor;
   #conditions: Condition[];
 
-  constructor(client: DatabaseClient, conditions: Condition[] = []) {
-    this.#client = client;
+  constructor(executor: Executor, conditions: Condition[] = []) {
+    this.#executor = executor;
     this.#conditions = conditions;
   }
 
   from<U extends AnyTable>(table: U): SelectBuilder<U> {
-    return new SelectBuilder(this.#client, table._.name, table, this.#conditions);
+    return new SelectBuilder(this.#executor, table._.name, table, this.#conditions);
   }
 }
 
@@ -186,7 +172,7 @@ export class SelectFromBuilder implements SelectStage1 {
  * Call `.columns()` to narrow — returns a `NarrowedSelectBuilder`.
  */
 export class SelectBuilder<T extends AnyTable> implements Executable {
-  #client: DatabaseClient;
+  #executor: Executor;
   #tableName: string;
   #table: T;
   #conditions: Condition[];
@@ -197,7 +183,7 @@ export class SelectBuilder<T extends AnyTable> implements Executable {
   #distinct: boolean;
 
   constructor(
-    client: DatabaseClient,
+    executor: Executor,
     tableName: string,
     table: T,
     conditions: Condition[] = [],
@@ -207,7 +193,7 @@ export class SelectBuilder<T extends AnyTable> implements Executable {
     offsetValue: number | null = null,
     distinct: boolean = false,
   ) {
-    this.#client = client;
+    this.#executor = executor;
     this.#tableName = tableName;
     this.#table = table;
     this.#conditions = conditions;
@@ -221,7 +207,7 @@ export class SelectBuilder<T extends AnyTable> implements Executable {
   /** Add a WHERE condition. Multiple calls stack. */
   where(condition: Condition): SelectBuilder<T> {
     return new SelectBuilder(
-      this.#client,
+      this.#executor,
       this.#tableName,
       this.#table,
       [...this.#conditions, condition],
@@ -243,7 +229,7 @@ export class SelectBuilder<T extends AnyTable> implements Executable {
    */
   columns<K extends keyof InferRow<T>>(keys: K[]): NarrowedSelectBuilder<T, K> {
     return new NarrowedSelectBuilder(
-      this.#client,
+      this.#executor,
       this.#tableName,
       this.#table,
       this.#conditions,
@@ -258,7 +244,7 @@ export class SelectBuilder<T extends AnyTable> implements Executable {
   /** Return a single row or null instead of an array. Adds `LIMIT 1` to the SQL. */
   single(): SingleSelectBuilder<T> {
     return new SingleSelectBuilder(
-      this.#client,
+      this.#executor,
       this.#tableName,
       this.#table,
       this.#conditions,
@@ -272,7 +258,7 @@ export class SelectBuilder<T extends AnyTable> implements Executable {
   /** Return only distinct (unique) rows. */
   distinct(): SelectBuilder<T> {
     return new SelectBuilder(
-      this.#client,
+      this.#executor,
       this.#tableName,
       this.#table,
       this.#conditions,
@@ -288,7 +274,7 @@ export class SelectBuilder<T extends AnyTable> implements Executable {
   orderBy<K extends keyof InferRow<T>>(key: K, direction: 'asc' | 'desc' = 'asc'): SelectBuilder<T> {
     const column = getCol(this.#table, key as string);
     return new SelectBuilder(
-      this.#client,
+      this.#executor,
       this.#tableName,
       this.#table,
       this.#conditions,
@@ -303,7 +289,7 @@ export class SelectBuilder<T extends AnyTable> implements Executable {
   /** Limit the number of results. */
   limit(n: number): SelectBuilder<T> {
     return new SelectBuilder(
-      this.#client,
+      this.#executor,
       this.#tableName,
       this.#table,
       this.#conditions,
@@ -318,7 +304,7 @@ export class SelectBuilder<T extends AnyTable> implements Executable {
   /** Skip N rows before returning results. */
   offset(n: number): SelectBuilder<T> {
     return new SelectBuilder(
-      this.#client,
+      this.#executor,
       this.#tableName,
       this.#table,
       this.#conditions,
@@ -348,15 +334,15 @@ export class SelectBuilder<T extends AnyTable> implements Executable {
   }
 
   /** Execute the query and return all matching rows. */
-  execute(): InferRow<T>[] {
+  async execute(): Promise<InferRow<T>[]> {
     const { sql, params } = this.toSQL();
     try {
-      const rows = this.#client.prepare(sql).all(...bind(params)) as Record<string, unknown>[];
+      const rows = await this.#executor.all(sql, params);
+      const records = rows as Record<string, unknown>[];
       if (this.#selectedColumns) {
-        // SAFETY: NarrowRow<InferRow<T>, keyof InferRow<T>> is structurally InferRow<T>
-        return rows.map((r) => decodeSelectedRow(r, this.#table, this.#selectedColumns!)) as InferRow<T>[];
+        return records.map((r) => decodeSelectedRow(r, this.#table, this.#selectedColumns!)) as InferRow<T>[];
       }
-      return rows.map((r) => decodeRow(r, this.#table));
+      return records.map((r) => decodeRow(r, this.#table));
     } catch (e) {
       throw new FlintQueryError(`Failed to execute query: ${sql}`, e as Error);
     }
@@ -369,7 +355,7 @@ export class SelectBuilder<T extends AnyTable> implements Executable {
  * `{ id: string; name: string }` shape, no Pick wrapper.
  */
 export class NarrowedSelectBuilder<T extends AnyTable, C extends keyof InferRow<T>> implements Executable {
-  #client: DatabaseClient;
+  #executor: Executor;
   #tableName: string;
   #table: T;
   #conditions: Condition[];
@@ -380,7 +366,7 @@ export class NarrowedSelectBuilder<T extends AnyTable, C extends keyof InferRow<
   #distinct: boolean;
 
   constructor(
-    client: DatabaseClient,
+    executor: Executor,
     tableName: string,
     table: T,
     conditions: Condition[],
@@ -390,7 +376,7 @@ export class NarrowedSelectBuilder<T extends AnyTable, C extends keyof InferRow<
     offsetValue: number | null,
     distinct: boolean,
   ) {
-    this.#client = client;
+    this.#executor = executor;
     this.#tableName = tableName;
     this.#table = table;
     this.#conditions = conditions;
@@ -403,7 +389,7 @@ export class NarrowedSelectBuilder<T extends AnyTable, C extends keyof InferRow<
 
   where(condition: Condition): NarrowedSelectBuilder<T, C> {
     return new NarrowedSelectBuilder(
-      this.#client,
+      this.#executor,
       this.#tableName,
       this.#table,
       [...this.#conditions, condition],
@@ -417,7 +403,7 @@ export class NarrowedSelectBuilder<T extends AnyTable, C extends keyof InferRow<
 
   distinct(): NarrowedSelectBuilder<T, C> {
     return new NarrowedSelectBuilder(
-      this.#client,
+      this.#executor,
       this.#tableName,
       this.#table,
       this.#conditions,
@@ -431,7 +417,7 @@ export class NarrowedSelectBuilder<T extends AnyTable, C extends keyof InferRow<
 
   single(): NarrowedSingleSelectBuilder<T, C> {
     return new NarrowedSingleSelectBuilder(
-      this.#client,
+      this.#executor,
       this.#tableName,
       this.#table,
       this.#conditions,
@@ -445,7 +431,7 @@ export class NarrowedSelectBuilder<T extends AnyTable, C extends keyof InferRow<
   orderBy<K extends keyof InferRow<T>>(key: K, direction: 'asc' | 'desc' = 'asc'): NarrowedSelectBuilder<T, C> {
     const column = getCol(this.#table, key as string);
     return new NarrowedSelectBuilder(
-      this.#client,
+      this.#executor,
       this.#tableName,
       this.#table,
       this.#conditions,
@@ -459,7 +445,7 @@ export class NarrowedSelectBuilder<T extends AnyTable, C extends keyof InferRow<
 
   limit(n: number): NarrowedSelectBuilder<T, C> {
     return new NarrowedSelectBuilder(
-      this.#client,
+      this.#executor,
       this.#tableName,
       this.#table,
       this.#conditions,
@@ -473,7 +459,7 @@ export class NarrowedSelectBuilder<T extends AnyTable, C extends keyof InferRow<
 
   offset(n: number): NarrowedSelectBuilder<T, C> {
     return new NarrowedSelectBuilder(
-      this.#client,
+      this.#executor,
       this.#tableName,
       this.#table,
       this.#conditions,
@@ -503,11 +489,11 @@ export class NarrowedSelectBuilder<T extends AnyTable, C extends keyof InferRow<
   }
 
   /** Execute the query and return narrowed rows. */
-  execute(): Prettify<NarrowRow<InferRow<T>, C>>[] {
+  async execute(): Promise<Prettify<NarrowRow<InferRow<T>, C>>[]> {
     const { sql, params } = this.toSQL();
     try {
-      const rows = this.#client.prepare(sql).all(...bind(params)) as Record<string, unknown>[];
-      return rows.map((r) => decodeSelectedRow(r, this.#table, this.#selectedColumns));
+      const rows = await this.#executor.all(sql, params);
+      return (rows as Record<string, unknown>[]).map((r) => decodeSelectedRow(r, this.#table, this.#selectedColumns));
     } catch (e) {
       throw new FlintQueryError(`Failed to execute query: ${sql}`, e as Error);
     }
@@ -519,7 +505,7 @@ export class NarrowedSelectBuilder<T extends AnyTable, C extends keyof InferRow<
  * Returns `InferRow<T> | null` from `execute()`.
  */
 export class SingleSelectBuilder<T extends AnyTable> implements Executable {
-  #client: DatabaseClient;
+  #executor: Executor;
   #tableName: string;
   #table: T;
   #conditions: Condition[];
@@ -529,7 +515,7 @@ export class SingleSelectBuilder<T extends AnyTable> implements Executable {
   #distinct: boolean;
 
   constructor(
-    client: DatabaseClient,
+    executor: Executor,
     tableName: string,
     table: T,
     conditions: Condition[],
@@ -538,7 +524,7 @@ export class SingleSelectBuilder<T extends AnyTable> implements Executable {
     offsetValue: number | null = null,
     distinct: boolean = false,
   ) {
-    this.#client = client;
+    this.#executor = executor;
     this.#tableName = tableName;
     this.#table = table;
     this.#conditions = conditions;
@@ -550,7 +536,7 @@ export class SingleSelectBuilder<T extends AnyTable> implements Executable {
 
   where(condition: Condition): SingleSelectBuilder<T> {
     return new SingleSelectBuilder(
-      this.#client,
+      this.#executor,
       this.#tableName,
       this.#table,
       [...this.#conditions, condition],
@@ -564,7 +550,7 @@ export class SingleSelectBuilder<T extends AnyTable> implements Executable {
   orderBy<K extends keyof InferRow<T>>(key: K, direction: 'asc' | 'desc' = 'asc'): SingleSelectBuilder<T> {
     const column = getCol(this.#table, key as string);
     return new SingleSelectBuilder(
-      this.#client,
+      this.#executor,
       this.#tableName,
       this.#table,
       this.#conditions,
@@ -577,7 +563,7 @@ export class SingleSelectBuilder<T extends AnyTable> implements Executable {
 
   offset(n: number): SingleSelectBuilder<T> {
     return new SingleSelectBuilder(
-      this.#client,
+      this.#executor,
       this.#tableName,
       this.#table,
       this.#conditions,
@@ -606,16 +592,16 @@ export class SingleSelectBuilder<T extends AnyTable> implements Executable {
   }
 
   /** Returns a single row or null, never throws on empty results. */
-  execute(): InferRow<T> | null {
+  async execute(): Promise<InferRow<T> | null> {
     const { sql, params } = this.toSQL();
     try {
-      const row = this.#client.prepare(sql).get(...bind(params)) as Record<string, unknown> | null;
+      const row = await this.#executor.get(sql, params);
       if (!row) return null;
+      const record = row as Record<string, unknown>;
       if (this.#selectedColumns) {
-        // SAFETY: NarrowRow<InferRow<T>, keyof InferRow<T>> is structurally InferRow<T>
-        return decodeSelectedRow(row, this.#table, this.#selectedColumns) as InferRow<T>;
+        return decodeSelectedRow(record, this.#table, this.#selectedColumns) as InferRow<T>;
       }
-      return decodeRow(row, this.#table);
+      return decodeRow(record, this.#table);
     } catch (e) {
       throw new FlintQueryError(`Failed to execute query: ${sql}`, e as Error);
     }
@@ -627,7 +613,7 @@ export class SingleSelectBuilder<T extends AnyTable> implements Executable {
  * Returns `NarrowRow<InferRow<T>, C> | null` from `execute()`.
  */
 export class NarrowedSingleSelectBuilder<T extends AnyTable, C extends keyof InferRow<T>> implements Executable {
-  #client: DatabaseClient;
+  #executor: Executor;
   #tableName: string;
   #table: T;
   #conditions: Condition[];
@@ -637,7 +623,7 @@ export class NarrowedSingleSelectBuilder<T extends AnyTable, C extends keyof Inf
   #distinct: boolean;
 
   constructor(
-    client: DatabaseClient,
+    executor: Executor,
     tableName: string,
     table: T,
     conditions: Condition[],
@@ -646,7 +632,7 @@ export class NarrowedSingleSelectBuilder<T extends AnyTable, C extends keyof Inf
     offsetValue: number | null,
     distinct: boolean,
   ) {
-    this.#client = client;
+    this.#executor = executor;
     this.#tableName = tableName;
     this.#table = table;
     this.#conditions = conditions;
@@ -658,7 +644,7 @@ export class NarrowedSingleSelectBuilder<T extends AnyTable, C extends keyof Inf
 
   where(condition: Condition): NarrowedSingleSelectBuilder<T, C> {
     return new NarrowedSingleSelectBuilder(
-      this.#client,
+      this.#executor,
       this.#tableName,
       this.#table,
       [...this.#conditions, condition],
@@ -672,7 +658,7 @@ export class NarrowedSingleSelectBuilder<T extends AnyTable, C extends keyof Inf
   orderBy<K extends keyof InferRow<T>>(key: K, direction: 'asc' | 'desc' = 'asc'): NarrowedSingleSelectBuilder<T, C> {
     const column = getCol(this.#table, key as string);
     return new NarrowedSingleSelectBuilder(
-      this.#client,
+      this.#executor,
       this.#tableName,
       this.#table,
       this.#conditions,
@@ -685,7 +671,7 @@ export class NarrowedSingleSelectBuilder<T extends AnyTable, C extends keyof Inf
 
   offset(n: number): NarrowedSingleSelectBuilder<T, C> {
     return new NarrowedSingleSelectBuilder(
-      this.#client,
+      this.#executor,
       this.#tableName,
       this.#table,
       this.#conditions,
@@ -714,12 +700,12 @@ export class NarrowedSingleSelectBuilder<T extends AnyTable, C extends keyof Inf
   }
 
   /** Returns a single narrowed row or null. */
-  execute(): Prettify<NarrowRow<InferRow<T>, C>> | null {
+  async execute(): Promise<Prettify<NarrowRow<InferRow<T>, C>> | null> {
     const { sql, params } = this.toSQL();
     try {
-      const row = this.#client.prepare(sql).get(...bind(params)) as Record<string, unknown> | null;
+      const row = await this.#executor.get(sql, params);
       if (!row) return null;
-      return decodeSelectedRow(row, this.#table, this.#selectedColumns);
+      return decodeSelectedRow(row as Record<string, unknown>, this.#table, this.#selectedColumns);
     } catch (e) {
       throw new FlintQueryError(`Failed to execute query: ${sql}`, e as Error);
     }
@@ -753,7 +739,7 @@ export interface JoinBuilder<Parent extends AnyTable, Joined extends AnyTable[],
   offset(n: number): JoinBuilder<Parent, Joined, ParentCols>;
   single(): SingleJoinBuilder<Parent, Joined, ParentCols>;
   toSQL(): { sql: string; params: unknown[] };
-  execute(): JoinResult<Parent, Joined, ParentCols>[];
+  execute(): Promise<JoinResult<Parent, Joined, ParentCols>[]>;
 }
 
 /** @internal Single-row join builder — after `.single()` on a JoinBuilder. */
@@ -766,18 +752,18 @@ export interface SingleJoinBuilder<
   orderBy<K extends keyof InferRow<Parent>>(key: K, direction?: 'asc' | 'desc'): SingleJoinBuilder<Parent, Joined, ParentCols>;
   offset(n: number): SingleJoinBuilder<Parent, Joined, ParentCols>;
   toSQL(): { sql: string; params: unknown[] };
-  execute(): JoinResult<Parent, Joined, ParentCols> | null;
+  execute(): Promise<JoinResult<Parent, Joined, ParentCols> | null>;
 }
 
 /** @internal Implementation of JoinSelectStage1. */
 export class JoinStage1<Parent extends AnyTable> implements JoinSelectStage1<Parent> {
-  #client: DatabaseClient;
+  #executor: Executor;
   #parent: Parent;
   #parentName: string;
   #joinType: JoinType;
 
-  constructor(client: DatabaseClient, parent: Parent, parentName: string, joinType: JoinType) {
-    this.#client = client;
+  constructor(executor: Executor, parent: Parent, parentName: string, joinType: JoinType) {
+    this.#executor = executor;
     this.#parent = parent;
     this.#parentName = parentName;
     this.#joinType = joinType;
@@ -793,7 +779,7 @@ export class JoinStage1<Parent extends AnyTable> implements JoinSelectStage1<Par
     const childName = child._.name;
     const resolvedCondition = condition ?? resolveForeignKeyCondition(this.#parent, this.#parentName, child, childName);
     return new JoinBuilderImpl(
-      this.#client,
+      this.#executor,
       this.#parent,
       this.#parentName,
       [{ table: child, name: childName, condition: resolvedCondition }],
@@ -808,7 +794,7 @@ export class JoinBuilderImpl<
   Joined extends AnyTable[],
   ParentCols extends keyof InferRow<Parent> = keyof InferRow<Parent>,
 > implements JoinBuilder<Parent, Joined, ParentCols> {
-  #client: DatabaseClient;
+  #executor: Executor;
   #parent: Parent;
   #parentName: string;
   #joins: JoinClause[];
@@ -820,7 +806,7 @@ export class JoinBuilderImpl<
   #offsetValue: number | null;
 
   constructor(
-    client: DatabaseClient,
+    executor: Executor,
     parent: Parent,
     parentName: string,
     joins: JoinClause[],
@@ -831,7 +817,7 @@ export class JoinBuilderImpl<
     limitValue: number | null = null,
     offsetValue: number | null = null,
   ) {
-    this.#client = client;
+    this.#executor = executor;
     this.#parent = parent;
     this.#parentName = parentName;
     this.#joins = joins;
@@ -851,7 +837,7 @@ export class JoinBuilderImpl<
     const resolvedCondition = condition ?? resolveForeignKeyCondition(this.#parent, this.#parentName, child, childName);
     // SAFETY: constructor args match the interface — TypeScript can't infer the spread tuple type
     return new JoinBuilderImpl(
-      this.#client,
+      this.#executor,
       this.#parent,
       this.#parentName,
       [...this.#joins, { table: child, name: childName, condition: resolvedCondition }],
@@ -864,7 +850,7 @@ export class JoinBuilderImpl<
   where(condition: Condition): JoinBuilder<Parent, Joined, ParentCols> {
     // SAFETY: constructor args match the interface
     return new JoinBuilderImpl(
-      this.#client,
+      this.#executor,
       this.#parent,
       this.#parentName,
       this.#joins,
@@ -877,7 +863,7 @@ export class JoinBuilderImpl<
   columns<K extends keyof InferRow<Parent>>(keys: K[]): JoinBuilder<Parent, Joined, K> {
     // SAFETY: constructor args match the interface — K extends keyof InferRow<Parent> so keys are valid
     return new JoinBuilderImpl(
-      this.#client,
+      this.#executor,
       this.#parent,
       this.#parentName,
       this.#joins,
@@ -894,7 +880,7 @@ export class JoinBuilderImpl<
     const column = getCol(this.#parent, key as string);
     // SAFETY: constructor args match the interface
     return new JoinBuilderImpl(
-      this.#client,
+      this.#executor,
       this.#parent,
       this.#parentName,
       this.#joins,
@@ -910,7 +896,7 @@ export class JoinBuilderImpl<
   limit(n: number): JoinBuilder<Parent, Joined, ParentCols> {
     // SAFETY: constructor args match the interface
     return new JoinBuilderImpl(
-      this.#client,
+      this.#executor,
       this.#parent,
       this.#parentName,
       this.#joins,
@@ -926,7 +912,7 @@ export class JoinBuilderImpl<
   offset(n: number): JoinBuilder<Parent, Joined, ParentCols> {
     // SAFETY: constructor args match the interface
     return new JoinBuilderImpl(
-      this.#client,
+      this.#executor,
       this.#parent,
       this.#parentName,
       this.#joins,
@@ -942,7 +928,7 @@ export class JoinBuilderImpl<
   single(): SingleJoinBuilder<Parent, Joined, ParentCols> {
     // SAFETY: constructor args match the interface
     return new SingleJoinBuilderImpl(
-      this.#client,
+      this.#executor,
       this.#parent,
       this.#parentName,
       this.#joins,
@@ -990,79 +976,78 @@ export class JoinBuilderImpl<
     return { sql, params: [...joinParams, ...whereParams] };
   }
 
-  execute(): JoinResult<Parent, Joined, ParentCols>[] {
+  async execute(): Promise<JoinResult<Parent, Joined, ParentCols>[]> {
     const { sql, params } = this.toSQL();
     try {
-      const rows = this.#client.prepare(sql).all(...bind(params)) as Record<string, unknown>[];
-
-      // Group flat rows by parent PK
-      const parentEntries = columnEntries(this.#parent);
-      const pkKey = findPKKey(this.#parent);
-      const pkColName = getCol(this.#parent, pkKey).name;
-
-      // Build child entry maps for each join
-      const childEntryMaps: {
-        name: string;
-        entries: [string, ColumnDef<any, any>][];
-        table: AnyTable;
-      }[] = [];
-      for (const j of this.#joins) {
-        childEntryMaps.push({
-          name: j.name,
-          entries: columnEntries(j.table),
-          table: j.table,
-        });
-      }
-
-      const grouped = new Map<unknown, { parent: Record<string, unknown>; children: Record<string, unknown>[][] }>();
-
-      for (const row of rows) {
-        const pk = row[pkColName];
-        if (!grouped.has(pk)) {
-          const parentRow: Record<string, unknown> = {};
-          for (const [key, col] of parentEntries) {
-            parentRow[key] = row[col.name];
-          }
-          grouped.set(pk, {
-            parent: parentRow,
-            children: childEntryMaps.map(() => []),
-          });
-        }
-
-        const group = grouped.get(pk)!;
-        childEntryMaps.forEach((childMap, i) => {
-          const childRow: Record<string, unknown> = {};
-          let hasNonNullChild = false;
-          for (const [key, col] of childMap.entries) {
-            const val = row[`${childMap.name}_${col.name}`];
-            childRow[key] = val;
-            if (val != null) hasNonNullChild = true;
-          }
-          if (this.#joinType === 'left' && !hasNonNullChild) return;
-          group.children[i]!.push(childRow);
-        });
-      }
-
-      // Build nested result
-      const result: JoinResult<Parent, Joined, ParentCols>[] = [];
-      for (const { parent, children } of grouped.values()) {
-        const decodedParent = this.#selectedColumns
-          ? decodeSelectedRow(parent, this.#parent, this.#selectedColumns)
-          : decodeRow(parent, this.#parent);
-
-        const nested: Record<string, unknown> = { ...decodedParent };
-        childEntryMaps.forEach((childMap, i) => {
-          nested[childMap.name] = children[i]!.map((c) => decodeRow(c, childMap.table));
-        });
-
-        result.push(nested as JoinResult<Parent, Joined, ParentCols>);
-      }
-
-      return result;
+      const rows = await this.#executor.all(sql, params);
+      return this.#decodeJoinRows(rows as Record<string, unknown>[]);
     } catch (e) {
       if (e instanceof FlintQueryError) throw e;
       throw new FlintQueryError(`Failed to execute query: ${sql}`, e as Error);
     }
+  }
+
+  /** @internal Decode flat joined rows into nested result. */
+  #decodeJoinRows(rows: Record<string, unknown>[]): JoinResult<Parent, Joined, ParentCols>[] {
+    const parentEntries = columnEntries(this.#parent);
+    const pkKey = findPKKey(this.#parent);
+    const pkColName = getCol(this.#parent, pkKey).name;
+
+    const childEntryMaps: {
+      name: string;
+      entries: [string, ColumnDef<any, any>][];
+      table: AnyTable;
+    }[] = [];
+    for (const j of this.#joins) {
+      childEntryMaps.push({
+        name: j.name,
+        entries: columnEntries(j.table),
+        table: j.table,
+      });
+    }
+
+    const grouped = new Map<unknown, { parent: Record<string, unknown>; children: Record<string, unknown>[][] }>();
+
+    for (const row of rows) {
+      const pk = row[pkColName];
+      if (!grouped.has(pk)) {
+        const parentRow: Record<string, unknown> = {};
+        for (const [key, col] of parentEntries) {
+          parentRow[key] = row[col.name];
+        }
+        grouped.set(pk, {
+          parent: parentRow,
+          children: childEntryMaps.map(() => []),
+        });
+      }
+
+      const group = grouped.get(pk)!;
+      childEntryMaps.forEach((childMap, i) => {
+        const childRow: Record<string, unknown> = {};
+        let hasNonNullChild = false;
+        for (const [key, col] of childMap.entries) {
+          const val = row[`${childMap.name}_${col.name}`];
+          childRow[key] = val;
+          if (val != null) hasNonNullChild = true;
+        }
+        if (this.#joinType === 'left' && !hasNonNullChild) return;
+        group.children[i]!.push(childRow);
+      });
+    }
+
+    const result: JoinResult<Parent, Joined, ParentCols>[] = [];
+    for (const { parent, children } of grouped.values()) {
+      const decodedParent = this.#selectedColumns ? decodeSelectedRow(parent, this.#parent, this.#selectedColumns) : decodeRow(parent, this.#parent);
+
+      const nested: Record<string, unknown> = { ...decodedParent };
+      childEntryMaps.forEach((childMap, i) => {
+        nested[childMap.name] = children[i]!.map((c) => decodeRow(c, childMap.table));
+      });
+
+      result.push(nested as JoinResult<Parent, Joined, ParentCols>);
+    }
+
+    return result;
   }
 }
 
@@ -1079,7 +1064,7 @@ export class SingleJoinBuilderImpl<
   Joined extends AnyTable[],
   ParentCols extends keyof InferRow<Parent> = keyof InferRow<Parent>,
 > implements Executable {
-  #client: DatabaseClient;
+  #executor: Executor;
   #parent: Parent;
   #parentName: string;
   #joins: JoinClause[];
@@ -1090,7 +1075,7 @@ export class SingleJoinBuilderImpl<
   #offsetValue: number | null;
 
   constructor(
-    client: DatabaseClient,
+    executor: Executor,
     parent: Parent,
     parentName: string,
     joins: JoinClause[],
@@ -1100,7 +1085,7 @@ export class SingleJoinBuilderImpl<
     orderByClauses: { column: ColumnDef<any, any>; direction: 'asc' | 'desc' }[] = [],
     offsetValue: number | null = null,
   ) {
-    this.#client = client;
+    this.#executor = executor;
     this.#parent = parent;
     this.#parentName = parentName;
     this.#joins = joins;
@@ -1113,7 +1098,7 @@ export class SingleJoinBuilderImpl<
 
   where(condition: Condition): SingleJoinBuilderImpl<Parent, Joined, ParentCols> {
     return new SingleJoinBuilderImpl(
-      this.#client,
+      this.#executor,
       this.#parent,
       this.#parentName,
       this.#joins,
@@ -1128,7 +1113,7 @@ export class SingleJoinBuilderImpl<
   orderBy<K extends keyof InferRow<Parent>>(key: K, direction: 'asc' | 'desc' = 'asc'): SingleJoinBuilderImpl<Parent, Joined, ParentCols> {
     const column = getCol(this.#parent, key as string);
     return new SingleJoinBuilderImpl(
-      this.#client,
+      this.#executor,
       this.#parent,
       this.#parentName,
       this.#joins,
@@ -1142,7 +1127,7 @@ export class SingleJoinBuilderImpl<
 
   offset(n: number): SingleJoinBuilderImpl<Parent, Joined, ParentCols> {
     return new SingleJoinBuilderImpl(
-      this.#client,
+      this.#executor,
       this.#parent,
       this.#parentName,
       this.#joins,
@@ -1191,76 +1176,80 @@ export class SingleJoinBuilderImpl<
   }
 
   /** @internal Returns a single parent with nested children, or null. */
-  execute(): JoinResult<Parent, Joined, ParentCols> | null {
+  async execute(): Promise<JoinResult<Parent, Joined, ParentCols> | null> {
     const { sql, params } = this.toSQL();
     try {
-      const allRows = this.#client.prepare(sql).all(...bind(params)) as Record<string, unknown>[];
-      if (allRows.length === 0) return null;
-
-      // Group by parent PK (same logic as JoinBuilderImpl.execute)
-      const parentEntries = columnEntries(this.#parent);
-      const pkKey = findPKKey(this.#parent);
-      const pkColName = getCol(this.#parent, pkKey).name;
-
-      const childEntryMaps: {
-        name: string;
-        entries: [string, ColumnDef<any, any>][];
-        table: AnyTable;
-      }[] = [];
-      for (const j of this.#joins) {
-        childEntryMaps.push({
-          name: j.name,
-          entries: columnEntries(j.table),
-          table: j.table,
-        });
-      }
-
-      const grouped = new Map<unknown, { parent: Record<string, unknown>; children: Record<string, unknown>[][] }>();
-
-      for (const r of allRows) {
-        const pk = r[pkColName];
-        if (!grouped.has(pk)) {
-          const parentRow: Record<string, unknown> = {};
-          for (const [key, col] of parentEntries) {
-            parentRow[key] = r[col.name];
-          }
-          grouped.set(pk, {
-            parent: parentRow,
-            children: childEntryMaps.map(() => []),
-          });
-        }
-
-        const group = grouped.get(pk)!;
-        childEntryMaps.forEach((childMap, i) => {
-          const childRow: Record<string, unknown> = {};
-          let hasNonNullChild = false;
-          for (const [key, col] of childMap.entries) {
-            const val = r[`${childMap.name}_${col.name}`];
-            childRow[key] = val;
-            if (val != null) hasNonNullChild = true;
-          }
-          if (this.#joinType === 'left' && !hasNonNullChild) return;
-          group.children[i]!.push(childRow);
-        });
-      }
-
-      const first = grouped.values().next().value;
-      if (!first) return null;
-
-      const decodedParent = this.#selectedColumns
-        ? decodeSelectedRow(first.parent, this.#parent, this.#selectedColumns)
-        : decodeRow(first.parent, this.#parent);
-
-      const nested: Record<string, unknown> = { ...decodedParent };
-      childEntryMaps.forEach((childMap, i) => {
-        nested[childMap.name] = first.children[i]!.map((c) => decodeRow(c, childMap.table));
-      });
-
-      return nested as JoinResult<Parent, Joined, ParentCols>;
+      const rows = await this.#executor.all(sql, params);
+      const records = rows as Record<string, unknown>[];
+      if (records.length === 0) return null;
+      return this.#decodeJoinRow(records);
     } catch (e) {
       if (e instanceof FlintQueryError) throw e;
       throw new FlintQueryError(`Failed to execute query: ${sql}`, e as Error);
     }
+  }
+
+  /** @internal Decode flat joined rows into a single nested result. */
+  #decodeJoinRow(rows: Record<string, unknown>[]): JoinResult<Parent, Joined, ParentCols> | null {
+    const parentEntries = columnEntries(this.#parent);
+    const pkKey = findPKKey(this.#parent);
+    const pkColName = getCol(this.#parent, pkKey).name;
+
+    const childEntryMaps: {
+      name: string;
+      entries: [string, ColumnDef<any, any>][];
+      table: AnyTable;
+    }[] = [];
+    for (const j of this.#joins) {
+      childEntryMaps.push({
+        name: j.name,
+        entries: columnEntries(j.table),
+        table: j.table,
+      });
+    }
+
+    const grouped = new Map<unknown, { parent: Record<string, unknown>; children: Record<string, unknown>[][] }>();
+
+    for (const r of rows) {
+      const pk = r[pkColName];
+      if (!grouped.has(pk)) {
+        const parentRow: Record<string, unknown> = {};
+        for (const [key, col] of parentEntries) {
+          parentRow[key] = r[col.name];
+        }
+        grouped.set(pk, {
+          parent: parentRow,
+          children: childEntryMaps.map(() => []),
+        });
+      }
+
+      const group = grouped.get(pk)!;
+      childEntryMaps.forEach((childMap, i) => {
+        const childRow: Record<string, unknown> = {};
+        let hasNonNullChild = false;
+        for (const [key, col] of childMap.entries) {
+          const val = r[`${childMap.name}_${col.name}`];
+          childRow[key] = val;
+          if (val != null) hasNonNullChild = true;
+        }
+        if (this.#joinType === 'left' && !hasNonNullChild) return;
+        group.children[i]!.push(childRow);
+      });
+    }
+
+    const first = grouped.values().next().value;
+    if (!first) return null;
+
+    const decodedParent = this.#selectedColumns
+      ? decodeSelectedRow(first.parent, this.#parent, this.#selectedColumns)
+      : decodeRow(first.parent, this.#parent);
+
+    const nested: Record<string, unknown> = { ...decodedParent };
+    childEntryMaps.forEach((childMap, i) => {
+      nested[childMap.name] = first.children[i]!.map((c) => decodeRow(c, childMap.table));
+    });
+
+    return nested as JoinResult<Parent, Joined, ParentCols>;
   }
 }
 
@@ -1272,12 +1261,12 @@ export interface InsertStage1<T extends AnyTable> {
 
 /** @internal Lightweight wrapper that only exposes `.values()`. */
 export class InsertValuesBuilder<T extends AnyTable> implements InsertStage1<T> {
-  #client: DatabaseClient;
+  #executor: Executor;
   #tableName: string;
   #table: T;
 
-  constructor(client: DatabaseClient, tableName: string, table: T) {
-    this.#client = client;
+  constructor(executor: Executor, tableName: string, table: T) {
+    this.#executor = executor;
     this.#tableName = tableName;
     this.#table = table;
   }
@@ -1285,7 +1274,7 @@ export class InsertValuesBuilder<T extends AnyTable> implements InsertStage1<T> 
   values(row: InsertRow<T>): InsertBuilder<T>;
   values(rows: InsertRow<T>[]): InsertBuilder<T>;
   values(rowOrRows: InsertRow<T> | InsertRow<T>[]): InsertBuilder<T> {
-    return new InsertBuilder(this.#client, this.#tableName, this.#table, rowOrRows);
+    return new InsertBuilder(this.#executor, this.#tableName, this.#table, rowOrRows);
   }
 }
 
@@ -1300,7 +1289,7 @@ type OnConflictStrategy<T extends AnyTable> = OnConflictDoNothing | OnConflictDo
 
 /** Full INSERT builder — available after `.values()` has been called. */
 export class InsertBuilder<T extends AnyTable, R extends boolean = false, K extends keyof InferRow<T> = keyof InferRow<T>> implements Executable {
-  #client: DatabaseClient;
+  #executor: Executor;
   #tableName: string;
   #table: T;
   #rows: InsertRow<T>[];
@@ -1308,14 +1297,14 @@ export class InsertBuilder<T extends AnyTable, R extends boolean = false, K exte
   #onConflict?: OnConflictStrategy<T>;
 
   constructor(
-    client: DatabaseClient,
+    executor: Executor,
     tableName: string,
     table: T,
     rowOrRows: InsertRow<T> | InsertRow<T>[],
     returning: boolean | K[] = false,
     onConflict?: OnConflictStrategy<T>,
   ) {
-    this.#client = client;
+    this.#executor = executor;
     this.#tableName = tableName;
     this.#table = table;
     this.#rows = Array.isArray(rowOrRows) ? rowOrRows : [rowOrRows];
@@ -1334,7 +1323,7 @@ export class InsertBuilder<T extends AnyTable, R extends boolean = false, K exte
   returning(): InsertBuilder<T, true>;
   returning<NewK extends keyof InferRow<T>>(keys: NewK[]): InsertBuilder<T, true, NewK>;
   returning(keys?: (keyof InferRow<T>)[]): InsertBuilder<T, true, keyof InferRow<T>> {
-    return new InsertBuilder(this.#client, this.#tableName, this.#table, this.#rows, keys ?? true, this.#onConflict);
+    return new InsertBuilder(this.#executor, this.#tableName, this.#table, this.#rows, keys ?? true, this.#onConflict);
   }
 
   /**
@@ -1344,7 +1333,7 @@ export class InsertBuilder<T extends AnyTable, R extends boolean = false, K exte
    * db.insert(users).values(row).onConflictDoNothing()
    */
   onConflictDoNothing(): InsertBuilder<T, R, K> {
-    return new InsertBuilder(this.#client, this.#tableName, this.#table, this.#rows, this.#returning, { mode: 'nothing' });
+    return new InsertBuilder(this.#executor, this.#tableName, this.#table, this.#rows, this.#returning, { mode: 'nothing' });
   }
 
   /**
@@ -1357,7 +1346,7 @@ export class InsertBuilder<T extends AnyTable, R extends boolean = false, K exte
    * })
    */
   onConflictDoUpdate<C extends ColumnDef<any, any>>(options: { target: C | C[]; set: Partial<InferRow<T>> }): InsertBuilder<T, R, K> {
-    return new InsertBuilder(this.#client, this.#tableName, this.#table, this.#rows, this.#returning, {
+    return new InsertBuilder(this.#executor, this.#tableName, this.#table, this.#rows, this.#returning, {
       mode: 'update',
       target: options.target,
       set: options.set,
@@ -1444,21 +1433,18 @@ export class InsertBuilder<T extends AnyTable, R extends boolean = false, K exte
     return { sql, params };
   }
 
-  execute(): R extends true ? Prettify<NarrowRow<InferRow<T>, K>>[] : void {
+  async execute(): Promise<R extends true ? Prettify<NarrowRow<InferRow<T>, K>>[] : void> {
     const { sql, params } = this.toSQL();
     try {
       if (this.#returning) {
-        const rows = this.#client.prepare(sql).all(...bind(params)) as Record<string, unknown>[];
+        const rows = await this.#executor.all(sql, params);
+        const records = rows as Record<string, unknown>[];
         if (Array.isArray(this.#returning)) {
-          return rows.map((r) => decodeSelectedRow(r, this.#table, this.#returning as (keyof InferRow<T>)[])) as unknown as R extends true
-            ? Prettify<NarrowRow<InferRow<T>, K>>[]
-            : never;
+          return records.map((r) => decodeSelectedRow(r, this.#table, this.#returning as (keyof InferRow<T>)[])) as unknown as R extends true ? Prettify<NarrowRow<InferRow<T>, K>>[] : never;
         }
-        // SAFETY: decodeRow builds from the table's own column entries
-        return rows.map((r) => decodeRow(r, this.#table)) as unknown as R extends true ? Prettify<NarrowRow<InferRow<T>, K>>[] : never;
+        return records.map((r) => decodeRow(r, this.#table)) as unknown as R extends true ? Prettify<NarrowRow<InferRow<T>, K>>[] : never;
       }
-      this.#client.prepare(sql).run(...bind(params));
-      // SAFETY: R is false here — TS can't narrow conditional return types at runtime
+      await this.#executor.run(sql, params);
       return undefined as R extends true ? never : void;
     } catch (e) {
       throw new FlintQueryError(`Failed to execute query: ${sql}`, e as Error);
@@ -1473,24 +1459,24 @@ export interface UpdateStage1<T extends AnyTable> {
 
 /** @internal Lightweight wrapper that only exposes `.set()`. */
 export class UpdateSetBuilder<T extends AnyTable> implements UpdateStage1<T> {
-  #client: DatabaseClient;
+  #executor: Executor;
   #tableName: string;
   #table: T;
 
-  constructor(client: DatabaseClient, tableName: string, table: T) {
-    this.#client = client;
+  constructor(executor: Executor, tableName: string, table: T) {
+    this.#executor = executor;
     this.#tableName = tableName;
     this.#table = table;
   }
 
   set(partial: Partial<InferRow<T>>): UpdateBuilder<T> {
-    return new UpdateBuilder(this.#client, this.#tableName, this.#table, partial);
+    return new UpdateBuilder(this.#executor, this.#tableName, this.#table, partial);
   }
 }
 
 /** Full UPDATE builder — available after `.set()` has been called. */
 export class UpdateBuilder<T extends AnyTable, R extends boolean = false, K extends keyof InferRow<T> = keyof InferRow<T>> implements Executable {
-  #client: DatabaseClient;
+  #executor: Executor;
   #tableName: string;
   #table: T;
   #set: Partial<InferRow<T>>;
@@ -1498,14 +1484,14 @@ export class UpdateBuilder<T extends AnyTable, R extends boolean = false, K exte
   #returning: boolean | K[];
 
   constructor(
-    client: DatabaseClient,
+    executor: Executor,
     tableName: string,
     table: T,
     set: Partial<InferRow<T>>,
     conditions: Condition[] = [],
     returning: boolean | K[] = false,
   ) {
-    this.#client = client;
+    this.#executor = executor;
     this.#tableName = tableName;
     this.#table = table;
     this.#set = set;
@@ -1514,11 +1500,11 @@ export class UpdateBuilder<T extends AnyTable, R extends boolean = false, K exte
   }
 
   set(partial: Partial<InferRow<T>>): UpdateBuilder<T, R, K> {
-    return new UpdateBuilder(this.#client, this.#tableName, this.#table, { ...this.#set, ...partial }, this.#conditions, this.#returning);
+    return new UpdateBuilder(this.#executor, this.#tableName, this.#table, { ...this.#set, ...partial }, this.#conditions, this.#returning);
   }
 
   where(condition: Condition): UpdateBuilder<T, R, K> {
-    return new UpdateBuilder(this.#client, this.#tableName, this.#table, this.#set, [...this.#conditions, condition], this.#returning);
+    return new UpdateBuilder(this.#executor, this.#tableName, this.#table, this.#set, [...this.#conditions, condition], this.#returning);
   }
 
   /**
@@ -1532,7 +1518,7 @@ export class UpdateBuilder<T extends AnyTable, R extends boolean = false, K exte
   returning(): UpdateBuilder<T, true>;
   returning<NewK extends keyof InferRow<T>>(keys: NewK[]): UpdateBuilder<T, true, NewK>;
   returning(keys?: (keyof InferRow<T>)[]): UpdateBuilder<T, true, keyof InferRow<T>> {
-    return new UpdateBuilder(this.#client, this.#tableName, this.#table, this.#set, this.#conditions, keys ?? true);
+    return new UpdateBuilder(this.#executor, this.#tableName, this.#table, this.#set, this.#conditions, keys ?? true);
   }
 
   toSQL(): { sql: string; params: unknown[] } {
@@ -1564,21 +1550,18 @@ export class UpdateBuilder<T extends AnyTable, R extends boolean = false, K exte
     return { sql, params };
   }
 
-  execute(): R extends true ? Prettify<NarrowRow<InferRow<T>, K>>[] : void {
+  async execute(): Promise<R extends true ? Prettify<NarrowRow<InferRow<T>, K>>[] : void> {
     const { sql, params } = this.toSQL();
     try {
       if (this.#returning) {
-        const rows = this.#client.prepare(sql).all(...bind(params)) as Record<string, unknown>[];
+        const rows = await this.#executor.all(sql, params);
+        const records = rows as Record<string, unknown>[];
         if (Array.isArray(this.#returning)) {
-          return rows.map((r) => decodeSelectedRow(r, this.#table, this.#returning as (keyof InferRow<T>)[])) as unknown as R extends true
-            ? Prettify<NarrowRow<InferRow<T>, K>>[]
-            : never;
+          return records.map((r) => decodeSelectedRow(r, this.#table, this.#returning as (keyof InferRow<T>)[])) as unknown as R extends true ? Prettify<NarrowRow<InferRow<T>, K>>[] : never;
         }
-        // SAFETY: decodeRow builds from the table's own column entries
-        return rows.map((r) => decodeRow(r, this.#table)) as unknown as R extends true ? Prettify<NarrowRow<InferRow<T>, K>>[] : never;
+        return records.map((r) => decodeRow(r, this.#table)) as unknown as R extends true ? Prettify<NarrowRow<InferRow<T>, K>>[] : never;
       }
-      this.#client.prepare(sql).run(...bind(params));
-      // SAFETY: R is false here — TS can't narrow conditional return types at runtime
+      await this.#executor.run(sql, params);
       return undefined as R extends true ? never : void;
     } catch (e) {
       throw new FlintQueryError(`Failed to execute query: ${sql}`, e as Error);
@@ -1588,14 +1571,14 @@ export class UpdateBuilder<T extends AnyTable, R extends boolean = false, K exte
 
 /** Full DELETE builder — chain `.where()` calls then `.execute()`. */
 export class DeleteBuilder<T extends AnyTable, R extends boolean = false, K extends keyof InferRow<T> = keyof InferRow<T>> implements Executable {
-  #client: DatabaseClient;
+  #executor: Executor;
   #tableName: string;
   #table: T;
   #conditions: Condition[];
   #returning: boolean | K[];
 
-  constructor(client: DatabaseClient, tableName: string, table: T, conditions: Condition[] = [], returning: boolean | K[] = false) {
-    this.#client = client;
+  constructor(executor: Executor, tableName: string, table: T, conditions: Condition[] = [], returning: boolean | K[] = false) {
+    this.#executor = executor;
     this.#tableName = tableName;
     this.#table = table;
     this.#conditions = conditions;
@@ -1603,7 +1586,7 @@ export class DeleteBuilder<T extends AnyTable, R extends boolean = false, K exte
   }
 
   where(condition: Condition): DeleteBuilder<T, R, K> {
-    return new DeleteBuilder(this.#client, this.#tableName, this.#table, [...this.#conditions, condition], this.#returning);
+    return new DeleteBuilder(this.#executor, this.#tableName, this.#table, [...this.#conditions, condition], this.#returning);
   }
 
   /**
@@ -1617,7 +1600,7 @@ export class DeleteBuilder<T extends AnyTable, R extends boolean = false, K exte
   returning(): DeleteBuilder<T, true>;
   returning<NewK extends keyof InferRow<T>>(keys: NewK[]): DeleteBuilder<T, true, NewK>;
   returning(keys?: (keyof InferRow<T>)[]): DeleteBuilder<T, true, keyof InferRow<T>> {
-    return new DeleteBuilder(this.#client, this.#tableName, this.#table, this.#conditions, keys ?? true);
+    return new DeleteBuilder(this.#executor, this.#tableName, this.#table, this.#conditions, keys ?? true);
   }
 
   toSQL(): { sql: string; params: unknown[] } {
@@ -1637,21 +1620,18 @@ export class DeleteBuilder<T extends AnyTable, R extends boolean = false, K exte
     return { sql, params };
   }
 
-  execute(): R extends true ? Prettify<NarrowRow<InferRow<T>, K>>[] : void {
+  async execute(): Promise<R extends true ? Prettify<NarrowRow<InferRow<T>, K>>[] : void> {
     const { sql, params } = this.toSQL();
     try {
       if (this.#returning) {
-        const rows = this.#client.prepare(sql).all(...bind(params)) as Record<string, unknown>[];
+        const rows = await this.#executor.all(sql, params);
+        const records = rows as Record<string, unknown>[];
         if (Array.isArray(this.#returning)) {
-          return rows.map((r) => decodeSelectedRow(r, this.#table, this.#returning as (keyof InferRow<T>)[])) as unknown as R extends true
-            ? Prettify<NarrowRow<InferRow<T>, K>>[]
-            : never;
+          return records.map((r) => decodeSelectedRow(r, this.#table, this.#returning as (keyof InferRow<T>)[])) as unknown as R extends true ? Prettify<NarrowRow<InferRow<T>, K>>[] : never;
         }
-        // SAFETY: decodeRow builds from the table's own column entries
-        return rows.map((r) => decodeRow(r, this.#table)) as unknown as R extends true ? Prettify<NarrowRow<InferRow<T>, K>>[] : never;
+        return records.map((r) => decodeRow(r, this.#table)) as unknown as R extends true ? Prettify<NarrowRow<InferRow<T>, K>>[] : never;
       }
-      this.#client.prepare(sql).run(...bind(params));
-      // SAFETY: R is false here — TS can't narrow conditional return types at runtime
+      await this.#executor.run(sql, params);
       return undefined as R extends true ? never : void;
     } catch (e) {
       throw new FlintQueryError(`Failed to execute query: ${sql}`, e as Error);
