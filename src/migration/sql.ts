@@ -118,10 +118,7 @@ function operationToSQL(op: MigrationOperation): string[] {
     case 'modifyIndex': {
       const unique = op.to.unique ? 'UNIQUE ' : '';
       const columns = op.to.columns.join(', ');
-      return [
-        `DROP INDEX IF EXISTS ${op.indexName}`,
-        `CREATE ${unique}INDEX ${op.indexName} ON ${op.tableName} (${columns})`,
-      ];
+      return [`DROP INDEX IF EXISTS ${op.indexName}`, `CREATE ${unique}INDEX ${op.indexName} ON ${op.tableName} (${columns})`];
     }
   }
 }

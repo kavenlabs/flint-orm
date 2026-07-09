@@ -84,7 +84,8 @@ describe('LibsqlExecutor', () => {
 
   test('transaction() rolls back on error', async () => {
     const exec = new LibsqlExecutor(createLibsqlClient({ url: 'file::memory:' }));
-    await exec.run(`
+    await exec.run(
+      `
       CREATE TABLE test_users (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         name TEXT NOT NULL,
@@ -92,7 +93,9 @@ describe('LibsqlExecutor', () => {
         age INTEGER,
         created_at INTEGER NOT NULL
       )
-    `, []);
+    `,
+      [],
+    );
     try {
       await exec.transaction(async () => {
         await exec.run("INSERT INTO test_users (name, email, age, created_at) VALUES ('Frank', 'frank@test.com', 50, 6000)", []);

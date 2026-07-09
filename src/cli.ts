@@ -12,6 +12,7 @@ import type { SchemaState } from './migration/types.js';
 import { outro, log, cancel, isCancel, select, pc, note } from './cli/ui.js';
 import { CancellationError } from './migration/diff.js';
 import type { RenamePrompt } from './migration/diff.js';
+import type { Executor } from './executor.js';
 
 // ---------------------------------------------------------------------------
 // Config loading
@@ -185,7 +186,7 @@ async function cmdMigrate(args: ReturnType<typeof parseArgs>['values'], config: 
   const isLocalDriver = config.driver === 'bun-sqlite' || config.driver === 'better-sqlite3';
   const dbUrl = isLocalDriver ? resolve(process.cwd(), config.database.url) : config.database.url;
 
-  let executor: import('./executor').Executor;
+  let executor: Executor;
 
   switch (config.driver) {
     case 'bun-sqlite': {

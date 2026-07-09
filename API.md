@@ -596,15 +596,15 @@ import { addTable, dropTable, renameTable, addColumn, dropColumn, renameColumn, 
 
 ## Types
 
-| Type              | Description                                        |
-| ----------------- | -------------------------------------------------- |
-| `TableDef<T>`     | Table definition with hidden `._` metadata         |
-| `ColumnDef<T, S>` | Column definition with phantom types               |
-| `InferRow<T>`     | Derives row type from table definition             |
-| `InsertRow<T>`    | Derives insert type (defaults are optional)        |
-| `Executor`        | Database executor interface (all, get, run, transaction) |
-| `SQLExpression`   | `{ sql: string; params: unknown[] }`               |
-| `Executable`      | Anything with a `.toSQL()` method (for `batch()`)  |
+| Type              | Description                                                                               |
+| ----------------- | ----------------------------------------------------------------------------------------- |
+| `TableDef<T>`     | Table definition with hidden `._` metadata                                                |
+| `ColumnDef<T, S>` | Column definition with phantom types                                                      |
+| `InferRow<T>`     | Derives row type from table definition                                                    |
+| `InsertRow<T>`    | Derives insert type (defaults are optional)                                               |
+| `Executor`        | Database executor interface (all, get, run, transaction)                                  |
+| `SQLExpression`   | `{ sql: string; params: unknown[] }`                                                      |
+| `Executable`      | Anything with a `.toSQL()` method (for `batch()`)                                         |
 | `Driver`          | `'bun-sqlite' \| 'better-sqlite3' \| 'libsql' \| 'libsql-web' \| 'turso' \| 'turso-sync'` |
 
 ---

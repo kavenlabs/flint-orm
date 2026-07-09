@@ -1440,7 +1440,9 @@ export class InsertBuilder<T extends AnyTable, R extends boolean = false, K exte
         const rows = await this.#executor.all(sql, params);
         const records = rows as Record<string, unknown>[];
         if (Array.isArray(this.#returning)) {
-          return records.map((r) => decodeSelectedRow(r, this.#table, this.#returning as (keyof InferRow<T>)[])) as unknown as R extends true ? Prettify<NarrowRow<InferRow<T>, K>>[] : never;
+          return records.map((r) => decodeSelectedRow(r, this.#table, this.#returning as (keyof InferRow<T>)[])) as unknown as R extends true
+            ? Prettify<NarrowRow<InferRow<T>, K>>[]
+            : never;
         }
         return records.map((r) => decodeRow(r, this.#table)) as unknown as R extends true ? Prettify<NarrowRow<InferRow<T>, K>>[] : never;
       }
@@ -1557,7 +1559,9 @@ export class UpdateBuilder<T extends AnyTable, R extends boolean = false, K exte
         const rows = await this.#executor.all(sql, params);
         const records = rows as Record<string, unknown>[];
         if (Array.isArray(this.#returning)) {
-          return records.map((r) => decodeSelectedRow(r, this.#table, this.#returning as (keyof InferRow<T>)[])) as unknown as R extends true ? Prettify<NarrowRow<InferRow<T>, K>>[] : never;
+          return records.map((r) => decodeSelectedRow(r, this.#table, this.#returning as (keyof InferRow<T>)[])) as unknown as R extends true
+            ? Prettify<NarrowRow<InferRow<T>, K>>[]
+            : never;
         }
         return records.map((r) => decodeRow(r, this.#table)) as unknown as R extends true ? Prettify<NarrowRow<InferRow<T>, K>>[] : never;
       }
@@ -1627,7 +1631,9 @@ export class DeleteBuilder<T extends AnyTable, R extends boolean = false, K exte
         const rows = await this.#executor.all(sql, params);
         const records = rows as Record<string, unknown>[];
         if (Array.isArray(this.#returning)) {
-          return records.map((r) => decodeSelectedRow(r, this.#table, this.#returning as (keyof InferRow<T>)[])) as unknown as R extends true ? Prettify<NarrowRow<InferRow<T>, K>>[] : never;
+          return records.map((r) => decodeSelectedRow(r, this.#table, this.#returning as (keyof InferRow<T>)[])) as unknown as R extends true
+            ? Prettify<NarrowRow<InferRow<T>, K>>[]
+            : never;
         }
         return records.map((r) => decodeRow(r, this.#table)) as unknown as R extends true ? Prettify<NarrowRow<InferRow<T>, K>>[] : never;
       }
