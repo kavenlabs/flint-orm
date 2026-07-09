@@ -1,238 +1,385 @@
-# flint-orm
+# Flint ORM
 
-A minimal, type-safe SQLite ORM. One dialect, one runtime, no abstraction overhead.
+A type-safe SQLite ORM for JavaScript. One schema, any driver.
 
-## Why
+## Features
 
-Drizzle is great, but its execution layer (`drizzle-kit migrate`) wasn't built for dynamic, multi-tenant, per-request-connection contexts. Flint is narrower by design: SQLite/libSQL only, no multi-dialect abstraction, no pluggable drivers — just a query builder that does exactly what SQLite supports.
+- **Driver-agnostic** — use `bun:sqlite`, `better-sqlite3`, `@libsql/client`, or Turso sync
+- **Type-safe queries** — full TypeScript inference for results, inserts, and updates
+- **Schema-first migrations** — define tables in code, generate and apply migrations
+- **Fluent query builder** — chainable API for SELECT, INSERT, UPDATE, DELETE, and JOINs
+- **Aggregate functions** — count, sum, avg, min, max with type inference
+- **Zero runtime dependencies** on the core — drivers are opt-in per subpath
 
 ## Install
 
 ```bash
-npm install flint-orm
 bun add flint-orm
+# or
+npm install flint-orm
 ```
 
 ## Quick Start
 
 ```ts
-import { flint, table, text, integer, eq } from 'flint-orm';
+import { flint } from 'flint-orm/bun-sqlite'
+import { table, text, integer, date } from 'flint-orm/table'
+import { eq, and } from 'flint-orm/expressions'
 
+// Define schema
 const users = table('users', {
   id: text('id').primaryKey(),
   name: text('name').notNull(),
   email: text('email').unique(),
   age: integer('age'),
-});
+  createdAt: date('created_at').defaultNow(),
+})
 
-const db = flint({ url: 'app.db' });
+// Connect
+const db = flint({ url: './app.db' })
 
 // Insert
-db.insert(users).values({ id: 'u1', name: 'Alice', email: 'alice@example.com' }).execute();
+db.insert(users).values({ id: 'u1', name: 'Alice', email: 'alice@example.com' }).execute()
 
 // Query
-const user = db.select().from(users).where(eq(users.id, 'u1')).single().execute();
-// { id: "u1", name: "Alice", email: "alice@example.com", age: null }
+const adults = db.select().from(users).where(eq(users.age, 18)).execute()
+//    ^? { id: string; name: string; email: string; age: number; createdAt: Date }[]
 
-// Update
-db.update(users).set({ name: 'Alice Updated' }).where(eq(users.id, 'u1')).execute();
-
-// Delete
-db.delete(users).where(eq(users.id, 'u1')).execute();
+// Single row
+const alice = db.select().from(users).where(eq(users.id, 'u1')).single().execute()
+//    ^? { id: string; name: string; email: string; age: number; createdAt: Date } | null
 ```
 
-## Features
+## Drivers
 
-### Schema
+| Driver | Package | Environment | Async | Auth Token |
+| --- | --- | --- | --- | --- |
+| `bun-sqlite` | `flint-orm/bun-sqlite` | Bun | No | No |
+| `better-sqlite3` | `flint-orm/better-sqlite3` | Node, Deno | No | No |
+| `libsql` | `flint-orm/libsql` | Node, Deno, Bun | Yes | Yes |
+| `libsql-web` | `flint-orm/libsql-web` | Browser | Yes | Yes |
+| `turso-sync` | `flint-orm/turso-sync` | Node, Deno, Bun | Yes | Yes |
+
+### libsql / Turso
 
 ```ts
-import { table, text, integer, boolean, json, date, real, index } from 'flint-orm';
+import { flint } from 'flint-orm/libsql'
 
-const users = table(
-  'users',
-  {
-    id: text('id').primaryKey(),
-    name: text('name').notNull(),
-    email: text('email').unique(),
-    active: boolean('active').default(true),
-    metadata: json('metadata'),
-    createdAt: date('createdAt').defaultNow().onUpdate(),
-    score: real('score'),
-    age: integer('age'),
-    orgId: text('orgId').references(orgs.id),
-  },
-  (t) => [index('idx_users_email').on(t.email).unique(), index('idx_users_org').on(t.orgId)],
-);
+const db = flint({
+  url: 'libsql://your-db.turso.io',
+  authToken: 'your-token',
+})
+
+const rows = await db.select().from(users).execute()
 ```
 
-| Type      | TS Type   | SQLite  | Modifiers                                                                 |
-| --------- | --------- | ------- | ------------------------------------------------------------------------- |
-| `text`    | `string`  | TEXT    | `.primaryKey()`, `.notNull()`, `.unique()`, `.default()`, `.references()` |
-| `integer` | `number`  | INTEGER | `.autoIncrement()`                                                        |
-| `boolean` | `boolean` | INTEGER | Encodes 0/1                                                               |
-| `json<T>` | `T`       | TEXT    | JSON encode/decode                                                        |
-| `date`    | `Date`    | INTEGER | `.defaultNow()`, `.onUpdate()`                                            |
-| `real`    | `number`  | REAL    |                                                                           |
-
-### Query Builder
-
-Two-phase builders prevent invalid queries at compile time:
+### better-sqlite3
 
 ```ts
-// SELECT
-db.select().from(users).columns(['id', 'name']).where(eq(users.active, true)).orderBy('name').limit(10).execute();
+import { flint } from 'flint-orm/better-sqlite3'
 
-// INSERT
-db.insert(users).values({ id: 'u1', name: 'Alice' }).returning().execute();
+const db = flint({ url: './app.db' })
 
-// UPSERT
-db.insert(users)
-  .values({ id: 'u1', name: 'Alice' })
-  .onConflictDoUpdate({ target: users.id, set: { name: 'Bob' } })
-  .execute();
-
-// UPDATE
-db.update(users).set({ name: 'Bob' }).where(eq(users.id, 'u1')).returning().execute();
-
-// DELETE
-db.delete(users).where(eq(users.id, 'u1')).returning().execute();
+const rows = db.select().from(users).execute() // synchronous
 ```
 
-### Joins
+## Schema Definition
+
+### Columns
 
 ```ts
-const orders = table('orders', {
+import { table, text, integer, boolean, real, json, date, index } from 'flint-orm/table'
+
+const posts = table('posts', {
   id: text('id').primaryKey(),
-  userId: text('userId').references(users.id),
-  total: integer('total').notNull(),
-});
+  title: text('title').notNull(),
+  body: text('body'),
+  published: boolean('published').default(false),
+  views: integer('views').default(0).autoIncrement(),
+  price: real('price'),
+  metadata: json('metadata').default({}),
+  createdAt: date('created_at').defaultNow(),
+  updatedAt: date('updated_at').onUpdate(),
+})
+```
 
-// Left join — nested result shape
-const result = db.leftJoin(orders).on(users).execute();
-// [{ id: "u1", name: "Alice", __children: [{ id: "o1", total: 100 }] }]
+### Modifiers
 
-// Multi-join
-db.leftJoin(orders).on(users).leftJoin(orderItems).on(orders).execute();
+- `.primaryKey()` — mark as primary key
+- `.notNull()` — disallow NULL values
+- `.unique()` — add unique constraint
+- `.default(value)` — static default value
+- `.defaultFn(fn)` — dynamic default (called on insert when value is omitted)
+- `.references(target)` — foreign key reference
+- `.autoIncrement()` — integer auto-increment (integer columns only)
+- `.defaultNow()` — use `Date.now()` as default (date columns only)
+- `.onUpdate()` — always set to `Date.now()` on update (date columns only)
+
+### Indexes
+
+```ts
+const users = table('users', {
+  id: text('id').primaryKey(),
+  email: text('email'),
+  name: text('name'),
+}, (t) => [
+  index('idx_users_email').on(t.email).unique(),
+  index('idx_users_name').on(t.name),
+])
+```
+
+### Type Inference
+
+```ts
+import type { InferRow, InsertRow } from 'flint-orm/table'
+
+type User = InferRow<typeof users>
+// { id: string; name: string; email: string | null; age: number | null; createdAt: Date }
+
+type NewUser = InsertRow<typeof users>
+// { id: string; name: string; email?: string | null; age?: number | null; createdAt?: Date }
+```
+
+`InsertRow` makes columns with auto-defaults (`integer`, `date`) optional.
+
+## Queries
+
+### SELECT
+
+```ts
+// All rows
+const all = db.select().from(users).execute()
+
+// With conditions
+const active = db.select().from(users).where(eq(users.active, true)).execute()
+
+// Narrow columns
+const names = db.select().from(users).columns(['id', 'name']).execute()
+//    ^? { id: string; name: string }[]
+
+// Single row
+const user = db.select().from(users).where(eq(users.id, 'u1')).single().execute()
+//    ^? { ... } | null
+
+// Ordering and pagination
+const page = db.select().from(users)
+  .orderBy('name', 'asc')
+  .limit(10)
+  .offset(20)
+  .execute()
+
+// Distinct
+const unique = db.select().from(users).columns(['email']).distinct().execute()
+```
+
+### INSERT
+
+```ts
+// Single row
+db.insert(users).values({ id: 'u1', name: 'Alice', email: 'alice@example.com' }).execute()
+
+// Multiple rows
+db.insert(users).values([
+  { id: 'u1', name: 'Alice' },
+  { id: 'u2', name: 'Bob' },
+]).execute()
+
+// Return inserted rows
+const inserted = db.insert(users)
+  .values({ id: 'u1', name: 'Alice' })
+  .returning()
+  .execute()
+//    ^? { id: string; name: string; ... }[]
+
+// Upsert
+db.insert(users).values({ id: 'u1', name: 'Alice' })
+  .onConflictDoUpdate({ target: users.id, set: { name: 'Alice' } })
+  .execute()
+
+// Ignore conflicts
+db.insert(users).values({ id: 'u1', name: 'Alice' })
+  .onConflictDoNothing()
+  .execute()
+```
+
+### UPDATE
+
+```ts
+db.update(users).set({ name: 'Bob' }).where(eq(users.id, 'u1')).execute()
+
+// Return updated rows
+const updated = db.update(users)
+  .set({ name: 'Bob' })
+  .where(eq(users.id, 'u1'))
+  .returning()
+  .execute()
+```
+
+### DELETE
+
+```ts
+db.delete(users).where(eq(users.id, 'u1')).execute()
+
+// Return deleted rows
+const deleted = db.delete(users)
+  .where(eq(users.id, 'u1'))
+  .returning()
+  .execute()
+```
+
+### JOINs
+
+```ts
+// Auto-join via foreign key (posts.userId references users.id)
+const postsWithAuthors = db.leftJoin(users).on(posts).execute()
+
+// Explicit join condition
+const result = db.leftJoin(users).on(posts, eq(posts.userId, users.id)).execute()
+
+// Chain multiple joins
+const complex = db.leftJoin(users)
+  .on(posts, eq(posts.userId, users.id))
+  .on(comments, eq(comments.postId, posts.id))
+  .where(eq(users.id, 'u1'))
+  .execute()
+
+// Inner join
+const inner = db.innerJoin(users).on(posts).execute()
+```
+
+Join results are nested — each joined table's data appears under its table name:
+
+```ts
+// result shape: { id: string; name: string; posts: { id: string; title: string }[] }
 ```
 
 ### Aggregates
 
 ```ts
-db.count(users);
-db.sum(orders, orders.total);
-db.avg(orders, orders.total, eq(orders.userId, 'u1'));
+const total = db.count(users)
+const activeCount = db.count(users, eq(users.active, true))
+const totalViews = db.sum(posts, posts.views)
+const avgAge = db.avg(users, users.age)
+const minAge = db.min(users, users.age)
+const maxAge = db.max(users, users.age)
 ```
 
-### Batch
+### Batch (Transactions)
 
 ```ts
-db.batch([db.insert(orders).values({ id: 'o1', userId: 'u1', total: 100 }), db.update(users).set({ totalOrders: 1 }).where(eq(users.id, 'u1'))]);
+db.batch([
+  db.insert(users).values({ id: 'u1', name: 'Alice' }),
+  db.insert(posts).values({ id: 'p1', userId: 'u1', title: 'Hello' }),
+])
 ```
 
 ### Raw SQL
 
 ```ts
-db.$client.prepare('SELECT * FROM users WHERE id = ?').all('u1');
+import { sql } from 'flint-orm'
+
+const expr = sql`name = ${'Alice'} AND age > ${18}`
+const result = db.select().from(users).where(expr).execute()
+
+// Direct execution
+db.$run('CREATE TABLE test (id INTEGER PRIMARY KEY, name TEXT)')
 ```
 
 ## Conditions
 
-```ts
-import { eq, neq, gt, gte, lt, lte, and, or, isIn, isNotIn, isNull, isNotNull, like, glob, between } from 'flint-orm';
-
-db.select()
-  .from(users)
-  .where(and(eq(users.active, true), gt(users.age, 18)))
-  .execute();
-```
-
-## Types
+All conditions are composable with `and()` and `or()`:
 
 ```ts
-import type { InferRow, InsertRow } from 'flint-orm';
+import { eq, neq, gt, gte, lt, lte, and, or, isIn, isNotIn, isNull, isNotNull, like, glob, between } from 'flint-orm/expressions'
 
-type UserRow = InferRow<typeof users>;
-type UserInsert = InsertRow<typeof users>; // defaults are optional
+// Equality
+eq(users.name, 'Alice')
+eq(posts.userId, users.id)  // column-to-column comparison
+
+// Comparisons
+gt(users.age, 18)
+gte(users.age, 18)
+lt(users.age, 65)
+lte(users.age, 65)
+neq(users.id, 'excluded')
+
+// Logical
+and(eq(users.active, true), gt(users.age, 18))
+or(eq(users.role, 'admin'), eq(users.role, 'moderator'))
+
+// Sets
+isIn(users.id, ['u1', 'u2', 'u3'])
+isNotIn(users.id, ['excluded'])
+
+// Null checks
+isNull(users.deletedAt)
+isNotNull(users.email)
+
+// Pattern matching
+like(users.name, 'A%')   // SQL LIKE (% = any characters, _ = single char)
+glob(users.name, 'A*')   // SQL GLOB (* = any characters, ? = single char)
+
+// Range
+between(users.age, 18, 65)
 ```
 
-## Migration System
+## Migrations
 
-### CLI
+Flint uses schema-first migrations. Define your tables in code, and the CLI generates migration files from the diff.
 
-```bash
-# Generate migration from schema changes
-flint generate --name init_schema
-
-# Preview SQL without writing files
-flint generate --preview
-
-# Apply pending migrations
-flint migrate
-
-# Check status
-flint migrate --status
-```
-
-### Config
+### Setup
 
 ```ts
 // flint.config.ts
-import { defineConfig } from 'flint-orm/config';
+import { defineConfig } from 'flint-orm/config'
 
 export default defineConfig({
+  driver: 'bun-sqlite',
+  database: {
+    url: './app.db',
+  },
   schema: './src/schema',
   migrations: './flint',
-  database: { url: './app.db' },
-});
+})
+```
+
+### Generate
+
+```bash
+flint generate              # auto-detect changes
+flint generate --name init  # name the migration
+flint generate --preview    # dry run, show SQL without writing
+```
+
+### Apply
+
+```bash
+flint migrate               # apply pending migrations
+flint migrate --status      # show applied vs pending
+flint migrate --dry-run     # show what would run
 ```
 
 ### How It Works
 
-1. `flint generate` serializes your `table()` definitions, diffs against the last snapshot, and writes a migration folder with TypeScript operations
-2. `flint migrate` reads pending migration folders, executes SQL via `batch()` (atomic), and records applied migrations in `__flint_migrations`
-3. Tables are topologically sorted by foreign key dependencies (Kahn's algorithm) — referenced tables are created first
+1. `flint generate` serializes your `table()` definitions to JSON
+2. Diffs against the last migration's `state.json`
+3. Detects adds, drops, renames, and safe modifications
+4. Prompts to confirm potential renames
+5. Writes a migration folder with `migration.ts` (operations) + `state.json` (snapshot)
+6. `flint migrate` reads pending migrations and executes them in order
 
-### Programmatic
+Unsafe changes (type changes, primary key changes) throw an error and must be handled manually.
 
-```ts
-import { generate, migrate, getMigrationStatus, serializeSchema, diffSchemas, generateSQL } from 'flint-orm/migration';
-```
+## Subpath Imports
 
-## CLI
-
-```
-flint <command> [options]
-
-Commands:
-  generate   Generate a new migration from schema changes
-  migrate    Apply pending migrations
-  status     Show migration status
-
-Options:
-  --name, -n    Migration name
-  --preview, -p Show SQL without writing files
-  --status      Show which migrations are pending/applied
-```
-
-## Error Handling
-
-```ts
-import { FlintValidationError, FlintQueryError } from 'flint-orm';
-```
-
-| Error                  | When                          |
-| ---------------------- | ----------------------------- |
-| `FlintValidationError` | Invalid query construction    |
-| `FlintQueryError`      | Runtime SQL execution failure |
-
-## Philosophy
-
-- **SQLite only** — no multi-dialect abstraction, no driver plugins
-- **Type-safe by construction** — two-phase builders, phantom types, `InferRow<T>`
-- **Immutable** — every chain method returns a new instance
-- **No classes** — functions and plain objects only
-- **Parameterized** — all queries use `?` placeholders, never string interpolation
-
-## License
-
-MIT
+| Import | What's in it |
+| --- | --- |
+| `flint-orm/bun-sqlite` | `flint()` factory for bun:sqlite |
+| `flint-orm/better-sqlite3` | `flint()` factory for better-sqlite3 |
+| `flint-orm/libsql` | `flint()` factory for @libsql/client |
+| `flint-orm/libsql-web` | `flint()` factory for @libsql/client/web |
+| `flint-orm/turso-sync` | `flint()` factory for @tursodatabase/sync |
+| `flint-orm/table` | `table()`, column constructors, index builder, type utilities |
+| `flint-orm/expressions` | `eq`, `and`, `or`, `gt`, `like`, and all condition helpers |
+| `flint-orm/config` | `defineConfig()` |
+| `flint-orm/migration` | `generate()`, `migrate()`, `serializeSchema()`, `diffSchemas()` |

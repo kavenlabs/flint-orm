@@ -5,6 +5,9 @@ A minimal, SQLite/libSQL-only query builder. Type-safe, immutable, parameterized
 ## Installation
 
 ```bash
+npm install flint-orm
+yarn add flint-orm
+pnpm add flint-orm
 bun add flint-orm
 ```
 
@@ -599,7 +602,7 @@ db.$run('INSERT INTO test VALUES (?, ?)', 1, 'Alice');
 
 ### `db.$client`
 
-Direct access to the underlying `bun:sqlite` client.
+Direct access to the underlying sqlite client.
 
 ```ts
 const rows = db.$client.prepare('SELECT * FROM users WHERE id = ?').all('u1');

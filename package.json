@@ -50,6 +50,6 @@
     "oxlint": "1.72.0"
   },
   "peerDependencies": {
-    "typescript": "7.0.1-rc"
+    "typescript": "7.0.2"
   }
 }

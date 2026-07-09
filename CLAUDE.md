@@ -2,138 +2,115 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-## Commands
+## Project Overview
 
-- **Build**: `bun run build` (compiles to `./dist/` via Bun + `tsc`)
-- **Typecheck**: `bun typecheck`
-- **Lint**: `bun lint` (oxlint)
-- **Format**: `bun format` (oxfmt)
-- **Run tests**: `bun test`
-- **Run a single test**: `bun test --test-name-pattern "test name"` or `bun test src/test.test.ts`
+flint-orm is a type-safe, driver-agnostic SQLite ORM for JavaScript. It supports multiple SQLite drivers (bun:sqlite, better-sqlite3, @libsql/client, Turso sync) with schema-first migrations. One schema, any driver.
 
-### CLI (flint)
+## Build & Dev Commands
 
-```bash
-# Generate migration from schema changes
-flint generate --name init_schema
+- **Build**: `bun run build` — bundles with `bun build` then runs `tsc` for type declarations
+- **Typecheck**: `bun run typecheck`
+- **Lint**: `bun run lint` (oxlint)
+- **Format**: `bun run format` (oxfmt)
+- **Run tests**: `bun test` (runs all tests in `tests/`)
+- **Run single test**: `bun test tests/path/to/file.test.ts`
+- **CLI**: `bun src/cli.ts <command>` (or `flint` when installed)
 
-# Preview SQL without writing files
-flint generate --preview
+## Architecture
 
-# Apply pending migrations
-flint migrate
+### Driver Abstraction
 
-# Check migration status
-flint migrate --status
+Each driver gets its own subpath export. Users install `flint-orm` once — subpaths are tree-shakable entry points within the same package.
+
 ```
+flint-orm/bun-sqlite      → bun:sqlite (sync)
+flint-orm/better-sqlite3   → better-sqlite3 (sync)
+flint-orm/libsql           → @libsql/client (async, authToken)
+flint-orm/libsql-web       → @libsql/client/web (async, authToken)
+flint-orm/turso-sync       → @tursodatabase/sync (async, authToken)
+```
+
+Each entry point exports a `flint()` factory bound to its driver. The driver import lives in the entry point, not the shared core — this is what enables tree-shaking.
+
+### Sync vs Async
+
+Drivers fall into two categories:
+- **Sync** (bun:sqlite, better-sqlite3): `execute()` returns `T[]` or `T | null` directly
+- **Async** (libsql, libsql-web, turso-sync): `execute()` returns `Promise<T[]>` or `Promise<T | null>`, and takes an optional `authToken`
+
+The shared query builder handles both via an `Executor` interface. Each driver adapter implements `Executor` with its actual return types. The builder's `execute()` returns whatever the executor returns — no duplicated builder classes.
+
+### Core Query System (`src/flint.ts` + `src/query/`)
+
+`flint(executor)` returns a client with `select()`, `insert()`, `update()`, `delete()`, `leftJoin()`, `innerJoin()`, `batch()`, and aggregate methods. The query builder is a multi-stage fluent API enforced at the type level:
+
+- `db.select().from(table)` → `SelectBuilder` (where, orderBy, limit, offset, columns, single, distinct)
+- `db.insert(table).values(row)` → `InsertBuilder` (onConflictDoNothing, onConflictDoUpdate, returning)
+- `db.update(table).set(partial)` → `UpdateBuilder` (where, returning)
+- `db.delete(table)` → `DeleteBuilder` (where, returning)
+- `db.leftJoin(parent).on(child)` → `JoinBuilder` (chained .on(), where, orderBy, columns)
+
+`batch()` runs multiple `Executable` objects in a single transaction. All builders implement `Executable` with a `toSQL()` method.
+
+### Schema Definitions (`src/schema/`)
+
+- `src/schema/columns.ts`: Column constructors (`text`, `integer`, `boolean`, `json`, `date`, `real`) return immutable `ColumnDef` objects with chainable modifiers (`.primaryKey()`, `.notNull()`, `.unique()`, `.default()`, `.defaultFn()`, `.references()`, `.autoIncrement()`, `.defaultNow()`, `.onUpdate()`). Each column has an `__internal` property with `encode`/`decode` functions for SQLite storage.
+- `src/schema/table.ts`: `table(name, columns, indexFn?)` stamps the table name onto columns and returns a `TableDef`. `InferRow<T>` and `InsertRow<T>` derive TypeScript row types. Index definitions use a chainable `index("name").on(col).unique()` builder. `snakeCase` variant auto-converts camelCase keys to snake_case SQL names.
+
+### Migration System (`src/migration/`)
+
+Schema-first migration pipeline:
+
+1. **Serialize** (`serialize.ts`): Converts live `table()` definitions to `SchemaState` (JSON-serializable `SerializedTable`/`SerializedColumn`/`SerializedIndex`).
+2. **Diff** (`diff.ts`): Compares previous vs current `SchemaState` to produce `MigrationOperation[]`. Handles table/column/index adds, drops, renames (with interactive user prompts), and safe modifications. Throws on unsafe changes (type changes, PK changes, etc.).
+3. **SQL generation** (`sql.ts`): Converts `MigrationOperation[]` to executable SQL strings.
+4. **Generate** (`generate.ts`): Orchestrates serialize → diff → resolveRenames → generateSQL, writes migration folder with `migration.ts` + `state.json`.
+5. **Migrate** (`migrate.ts`): Applies pending migrations in order, tracking applied migrations in a `__flint_migrations` table. Supports dry-run.
+
+### CLI (`src/cli.ts`)
+
+- `flint generate [--name] [--preview]`: Discovers schema from `flint.config.ts`, generates migration
+- `flint migrate [--dry-run] [--status] [--name]`: Applies migrations or shows status
+
+### Entry Points (`src/entries/`)
+
+Barrel re-exports for subpath imports:
+- `flint-orm/table` — schema definitions, column constructors, type utilities
+- `flint-orm/expressions` — condition helpers (eq, and, or, gt, like, etc.)
+- `flint-orm/config` — `defineConfig()`
+- `flint-orm/migration` — generate, migrate, serialize, diff
 
 ### Config (`flint.config.ts`)
 
 ```ts
-import { defineConfig } from 'flint-orm/config';
+import { defineConfig } from 'flint-orm/config'
 
 export default defineConfig({
-  schema: './src/schema',
+  driver: 'bun-sqlite',  // or 'better-sqlite3', 'libsql', 'libsql-web', 'turso-sync'
+  database: {
+    url: './app.db',
+    authToken: '...',  // for libsql/turso drivers only
+  },
+  schema: './db',
   migrations: './flint',
-  database: { url: './app.db' },
-});
+})
 ```
 
-## Architecture
+### TypeScript Configuration
 
-flint-orm is a type-safe SQLite ORM built for Bun. It uses functional composition (no classes, no `new`) with immutable, chainable builders. Backed by `bun:sqlite`.
+- Path aliases: `~/*` → `./src/*`, `flint-orm/*` → `./src/*`
+- `noUncheckedIndexedAccess: true` — handle potential undefined on index access
+- `verbatimModuleSyntax: true` — explicit `type` imports/exports
+- Strict mode enabled
 
-### Core Pattern: Two-Phase Builders
+### Error Hierarchy (`src/errors.ts`)
 
-All query operations use a two-phase builder pattern to enforce correct usage at the type level:
+`FlintError` → `FlintValidationError` (constraint violations), `FlintQueryError` (SQL execution failures, wraps original error). `CancellationError` (migration diff interactive prompts).
 
-1. **Phase 1 (Stage1)**: Only one method available (e.g., `.from()`, `.values()`, `.set()`)
-2. **Phase 2 (Full Builder)**: All chainable methods available after Phase 1
+## Key Patterns
 
-This prevents calling `.execute()` before providing required data.
-
-### Key Modules
-
-- **`src/flint.ts`**: `flint()` factory function — creates the db object with all query methods. Also exports `sql` tagged template for raw SQL expressions.
-- **`src/schema/table.ts`**: `table()` function defines tables. Stores column definitions as direct properties with SQL metadata under `._`. Also exports `snakeCase` namespace for auto camelCase→snake_case column naming.
-- **`src/schema/columns.ts`**: Column constructors (`text()`, `integer()`, `boolean()`, `json()`, `date()`, `real()`). Each returns an immutable `ColumnDef` with chainable modifiers (`.primaryKey()`, `.notNull()`, etc.).
-- **`src/query/builder.ts`**: All query builders (SELECT, INSERT, UPDATE, DELETE, JOIN). Builders receive `client` at construction and implement `Executable` interface with `.toSQL()` and `.execute()`.
-- **`src/query/conditions.ts`**: Condition helpers (`eq`, `and`, `or`, `gt`, `like`, etc.) that compile to SQL WHERE clauses. `eq()` supports both value and column-to-column comparison.
-- **`src/query/aggregates.ts`**: Aggregate functions (`count`, `countColumn`, `sum`, `avg`, `min`, `max`).
-
-### Column Storage Mapping
-
-Columns encode/decode between TypeScript types and SQLite storage classes:
-
-- `text()` → TEXT (string, passthrough)
-- `integer()` → INTEGER (number, passthrough). Supports `.autoIncrement()`.
-- `boolean()` → INTEGER (stores 0/1, exposes boolean)
-- `json()` → TEXT (JSON.stringify/parse)
-- `date()` → INTEGER (unix timestamp ms, exposes Date). Supports `.defaultNow()` and `.onUpdate()`.
-- `real()` → REAL (number, passthrough)
-
-### Data Flow
-
-1. Values go through `column.__internal.encode()` when building SQL params
-2. Results go through `column.__internal.decode()` when reading from SQLite
-3. All encoding/decoding happens at a single chokepoint per direction
-
-### Table/Column Relationship
-
-- `table()` stamps `tableName` onto each column's `__internal`
-- Columns carry their SQL name, type, constraints, and encode/decode functions
-- `._` property on table objects stores the SQL table name
-
-### Join System
-
-Joins support auto-discovery of foreign key conditions via `.references()` on column definitions. One-to-many joins produce nested arrays under the child table name.
-
-### Query Features
-
-- `.single()` — returns one row or null (adds LIMIT 1)
-- `.distinct()` — SELECT DISTINCT
-- `.columns()` — narrow selected columns (type-safe Pick)
-- `.returning()` — on INSERT/UPDATE/DELETE, return affected rows
-- `.onConflictDoNothing()` / `.onConflictDoUpdate()` — upsert support
-- `db.$run(sql, params)` — execute raw SQL directly
-- `db.$client.prepare(sql)` — access underlying `bun:sqlite` client
-- `db.batch(queries)` — run multiple queries in a transaction
-
-### snakeCase Tables
-
-Auto-converts camelCase keys to snake_case SQL names:
-
-```ts
-import { snakeCase, text } from 'flint-orm';
-
-const users = snakeCase.table('users', {
-  id: text().primaryKey(), // SQL: id
-  firstName: text().notNull(), // SQL: first_name
-  createdAt: text(), // SQL: created_at
-});
-```
-
-### Migration System
-
-- `flint generate` serializes `table()` definitions, diffs against last snapshot, writes migration folder with TypeScript operations
-- `flint migrate` reads pending migrations, executes SQL via `batch()` (atomic), records applied migrations in `__flint_migrations`
-- Tables are topologically sorted by foreign key dependencies (Kahn's algorithm)
-
-```ts
-import { generate, migrate, getMigrationStatus, serializeSchema, diffSchemas, generateSQL } from 'flint-orm/migration';
-```
-
-## Agent Guidelines
-
-- **Ask before assuming** — If a request is ambiguous, ask clarifying questions before taking action. Don't infer intent.
-- **Don't write code until asked** — When the user describes a problem or asks a question, analyze and discuss first. Only write code when explicitly requested.
-- **Present options** — When there are multiple valid approaches, present them with trade-offs rather than picking one unilaterally.
-- **Read before editing** — Always read relevant files before making changes. Understand the existing patterns first.
-- **Verify before claiming** — Don't state something works or is correct without checking. Run tests, typecheck, or verify against the code.
-
-## Conventions
-
-- **No classes in public API** — all functionality exposed via functions and plain objects
-- **Immutable builders** — every chain method returns a new instance
-- **Private fields** — use `#field` syntax (native private)
-- **Error hierarchy** — `FlintError` base → `FlintValidationError`, `FlintQueryError`
+- **Immutable builders**: Every builder method returns a new instance; no mutation. This makes query composition safe and predictable.
+- **Encode/decode on columns**: Columns handle type conversion between JS and SQLite storage (e.g., `date` ↔ unix timestamp, `boolean` ↔ 0/1, `json` ↔ stringified JSON).
+- **Column ownership validation**: Query builders validate that WHERE conditions only reference columns from the queried table(s).
+- **Topological sort**: Migration diff sorts tables by foreign key dependency so parent tables are created before dependents.
+- **Executor pattern**: Shared `Executor` interface abstracts sync vs async drivers. Builder logic is written once; only the executor implementation differs per driver.
