@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-flint-orm is a type-safe, driver-agnostic SQLite ORM for JavaScript. It supports multiple SQLite drivers (bun:sqlite, better-sqlite3, @libsql/client, Turso sync) with schema-first migrations. One schema, any driver.
+flint-orm is a type-safe, driver-agnostic SQLite ORM for JavaScript. It supports multiple SQLite drivers (bun:sqlite, better-sqlite3, @libsql/client, @tursodatabase/database, @tursodatabase/sync) with schema-first migrations. One schema, any driver.
 
 ## Build & Dev Commands
 
@@ -23,22 +23,21 @@ flint-orm is a type-safe, driver-agnostic SQLite ORM for JavaScript. It supports
 Each driver gets its own subpath export. Users install `flint-orm` once — subpaths are tree-shakable entry points within the same package.
 
 ```
-flint-orm/bun-sqlite      → bun:sqlite (sync)
-flint-orm/better-sqlite3   → better-sqlite3 (sync)
+flint-orm/bun-sqlite      → bun:sqlite (sync, Promise-wrapped)
+flint-orm/better-sqlite3   → better-sqlite3 (sync, Promise-wrapped)
 flint-orm/libsql           → @libsql/client (async, authToken)
 flint-orm/libsql-web       → @libsql/client/web (async, authToken)
+flint-orm/turso            → @tursodatabase/database (async)
 flint-orm/turso-sync       → @tursodatabase/sync (async, authToken)
 ```
 
 Each entry point exports a `flint()` factory bound to its driver. The driver import lives in the entry point, not the shared core — this is what enables tree-shaking.
 
-### Sync vs Async
+### Uniform Async API
 
-Drivers fall into two categories:
-- **Sync** (bun:sqlite, better-sqlite3): `execute()` returns `T[]` or `T | null` directly
-- **Async** (libsql, libsql-web, turso-sync): `execute()` returns `Promise<T[]>` or `Promise<T | null>`, and takes an optional `authToken`
+All `execute()` methods return `Promise<T>` regardless of driver. Sync drivers (bun:sqlite, better-sqlite3) wrap their results in `Promise.resolve()`. This means users always `await` — no need to think about which driver they're using.
 
-The shared query builder handles both via an `Executor` interface. Each driver adapter implements `Executor` with its actual return types. The builder's `execute()` returns whatever the executor returns — no duplicated builder classes.
+The shared `Executor` interface (`src/executor.ts`) requires all methods to return `Promise`. Each driver adapter implements this interface. The builder's `execute()` is always `async`.
 
 ### Core Query System (`src/flint.ts` + `src/query/`)
 
@@ -75,6 +74,7 @@ Schema-first migration pipeline:
 ### Entry Points (`src/entries/`)
 
 Barrel re-exports for subpath imports:
+
 - `flint-orm/table` — schema definitions, column constructors, type utilities
 - `flint-orm/expressions` — condition helpers (eq, and, or, gt, like, etc.)
 - `flint-orm/config` — `defineConfig()`
@@ -83,17 +83,17 @@ Barrel re-exports for subpath imports:
 ### Config (`flint.config.ts`)
 
 ```ts
-import { defineConfig } from 'flint-orm/config'
+import { defineConfig } from 'flint-orm/config';
 
 export default defineConfig({
-  driver: 'bun-sqlite',  // or 'better-sqlite3', 'libsql', 'libsql-web', 'turso-sync'
+  driver: 'bun-sqlite', // or 'better-sqlite3', 'libsql', 'libsql-web', 'turso', 'turso-sync'
   database: {
     url: './app.db',
-    authToken: '...',  // for libsql/turso drivers only
+    authToken: '...', // for libsql/libsql-web/turso-sync drivers
   },
   schema: './db',
   migrations: './flint',
-})
+});
 ```
 
 ### TypeScript Configuration
@@ -113,4 +113,4 @@ export default defineConfig({
 - **Encode/decode on columns**: Columns handle type conversion between JS and SQLite storage (e.g., `date` ↔ unix timestamp, `boolean` ↔ 0/1, `json` ↔ stringified JSON).
 - **Column ownership validation**: Query builders validate that WHERE conditions only reference columns from the queried table(s).
 - **Topological sort**: Migration diff sorts tables by foreign key dependency so parent tables are created before dependents.
-- **Executor pattern**: Shared `Executor` interface abstracts sync vs async drivers. Builder logic is written once; only the executor implementation differs per driver.
+- **Executor pattern**: Shared `Executor` interface (always async) abstracts all drivers. Sync drivers wrap results in `Promise.resolve()`. Builder logic is written once; only the executor implementation differs per driver.
