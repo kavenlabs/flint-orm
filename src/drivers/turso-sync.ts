@@ -7,6 +7,7 @@ import type { Database, DatabaseOpts } from '@tursodatabase/sync';
 import { resolve } from 'node:path';
 import type { Executor } from '../executor';
 import { createClient } from '../flint';
+import { LazyExecutor } from './lazy-executor';
 
 /** Convert undefined params to null — @tursodatabase/sync rejects undefined. */
 function sanitize(params: unknown[]): unknown[] {
@@ -61,18 +62,23 @@ export interface TursoSyncOptions extends Omit<DatabaseOpts, 'path' | 'url' | 'a
 /**
  * Create a flint database client using @tursodatabase/sync.
  *
+ * Connection is established lazily on first query.
+ *
  * @example
  * import { flint } from 'flint-orm/turso-sync'
  * const db = flint({ url: './local.db', syncUrl: 'libsql://db.turso.io', authToken: '...' })
  */
-export async function flint(options: TursoSyncOptions) {
+export function flint(options: TursoSyncOptions) {
   const { url, syncUrl, authToken, ...rest } = options;
   const localPath = url.includes('://') ? url : resolve(url);
-  const db = await connect({
-    path: localPath,
-    url: syncUrl,
-    authToken,
-    ...rest,
+  const executor = new LazyExecutor(async () => {
+    const db = await connect({
+      path: localPath,
+      url: syncUrl,
+      authToken,
+      ...rest,
+    });
+    return new TursoSyncExecutor(db);
   });
-  return createClient(new TursoSyncExecutor(db));
+  return createClient(executor);
 }

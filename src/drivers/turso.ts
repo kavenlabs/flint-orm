@@ -6,6 +6,7 @@ import { connect } from '@tursodatabase/database';
 import type { Database } from '@tursodatabase/database';
 import type { Executor } from '../executor';
 import { createClient } from '../flint';
+import { LazyExecutor } from './lazy-executor';
 
 /** Convert undefined params to null — @tursodatabase/database rejects undefined. */
 function sanitize(params: unknown[]): unknown[] {
@@ -51,12 +52,17 @@ export class TursoExecutor implements Executor {
 /**
  * Create a flint database client using @tursodatabase/database.
  *
+ * Connection is established lazily on first query.
+ *
  * @example
  * import { flint } from 'flint-orm/turso'
- * const db = await flint({ url: './app.db' })
+ * const db = flint({ url: './app.db' })
  */
-export async function flint(options: { url: string } & Parameters<typeof connect>[1]) {
+export function flint(options: { url: string } & Parameters<typeof connect>[1]) {
   const { url, ...opts } = options;
-  const db = await connect(url, Object.keys(opts).length ? (opts as Parameters<typeof connect>[1]) : undefined);
-  return createClient(new TursoExecutor(db));
+  const executor = new LazyExecutor(async () => {
+    const db = await connect(url, Object.keys(opts).length ? (opts as Parameters<typeof connect>[1]) : undefined);
+    return new TursoExecutor(db);
+  });
+  return createClient(executor);
 }
