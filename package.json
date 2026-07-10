@@ -2,7 +2,7 @@
   "name": "flint-orm",
   "version": "0.4.0",
   "bin": {
-    "flint": "./src/cli.ts"
+    "flint": "./dist/src/cli.js"
   },
   "files": [
     "dist",
@@ -59,7 +59,7 @@
     }
   },
   "scripts": {
-    "build": "bun build ./src/index.ts ./src/entries/bun-sqlite.ts ./src/entries/better-sqlite3.ts ./src/entries/libsql.ts ./src/entries/libsql-web.ts ./src/entries/turso-sync.ts ./src/entries/turso.ts ./src/entries/table.ts ./src/entries/expressions.ts ./src/entries/config.ts ./src/migration/index.ts --outdir ./dist --target bun && tsc --project tsconfig.build.json",
+    "build": "bun build ./src/index.ts ./src/entries/bun-sqlite.ts ./src/entries/better-sqlite3.ts ./src/entries/libsql.ts ./src/entries/libsql-web.ts ./src/entries/turso-sync.ts ./src/entries/turso.ts ./src/entries/table.ts ./src/entries/expressions.ts ./src/entries/config.ts ./src/migration/index.ts ./src/cli.ts --outdir ./dist --target bun && tsc --project tsconfig.build.json",
     "typecheck": "tsc --noEmit",
     "lint": "oxlint --fix",
     "format": "oxfmt --write",
