@@ -7,7 +7,7 @@ import { existsSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import type { Executor } from '../executor.js';
-import type { MigrationFile } from './types.js';
+import type { MigrationFile, RebuildTableOp } from './types.js';
 import { generateSQLStatements } from './sql.js';
 
 // ---------------------------------------------------------------------------
@@ -52,6 +52,32 @@ async function getAppliedMigrations(executor: Executor): Promise<Set<string>> {
 
 async function recordMigration(executor: Executor, name: string): Promise<void> {
   await executor.run(`INSERT INTO ${TRACKING_TABLE} (name, applied_at) VALUES (?, ?)`, [name, Date.now()]);
+}
+
+// ---------------------------------------------------------------------------
+// Incoming FK check — refuses rebuild if other tables reference this one.
+// Queries all user tables and checks their PRAGMA foreign_key_list for
+// references to the rebuild target.
+// ---------------------------------------------------------------------------
+
+async function checkIncomingForeignKeys(executor: Executor, tableName: string): Promise<void> {
+  const allTables = (await executor.all(
+    `SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' AND name NOT LIKE '__flint_%'`,
+    [],
+  )) as { name: string }[];
+
+  const referencing: string[] = [];
+  for (const { name } of allTables) {
+    if (name === tableName) continue;
+    const fkRows = (await executor.all(`PRAGMA foreign_key_list('${name}')`, [])) as { table: string }[];
+    if (fkRows.some((fk) => fk.table === tableName)) {
+      referencing.push(name);
+    }
+  }
+
+  if (referencing.length > 0) {
+    throw new Error(`Cannot rebuild "${tableName}" — referenced by: ${referencing.join(', ')}. ` + `Rebuild or migrate those tables first.`);
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -155,6 +181,13 @@ export async function migrate(executor: Executor, options: MigrateOptions): Prom
 
   for (const entry of pending) {
     const migration = await loadMigration(entry);
+
+    // Check for incoming FKs before any rebuild operations
+    for (const op of migration.operations) {
+      if (op.type === 'rebuildTable') {
+        await checkIncomingForeignKeys(executor, (op as RebuildTableOp).tableName);
+      }
+    }
 
     // Generate individual statements — one per operation, no split needed
     const statements = generateSQLStatements(migration.operations);

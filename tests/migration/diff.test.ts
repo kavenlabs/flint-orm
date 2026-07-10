@@ -232,7 +232,7 @@ describe('diffSchema', () => {
     expect((ops[0] as ModifyColumnOp).changes.isNotNull).toBe(true);
   });
 
-  test('throws on NOT NULL addition without default', () => {
+  test('NOT NULL addition without default produces rebuildTable', () => {
     const from: SchemaState = {
       version: 1,
       tables: {
@@ -260,10 +260,12 @@ describe('diffSchema', () => {
       },
     };
 
-    expect(() => diffSchemas(from, to)).toThrow('adding NOT NULL requires a DEFAULT value');
+    const ops = diffSchemas(from, to);
+    expect(ops).toHaveLength(1);
+    expect(ops[0]!.type).toBe('rebuildTable');
   });
 
-  test('throws on NOT NULL removal', () => {
+  test('NOT NULL removal produces rebuildTable', () => {
     const from: SchemaState = {
       version: 1,
       tables: {
@@ -291,10 +293,12 @@ describe('diffSchema', () => {
       },
     };
 
-    expect(() => diffSchemas(from, to)).toThrow('removing NOT NULL requires a table rebuild');
+    const ops = diffSchemas(from, to);
+    expect(ops).toHaveLength(1);
+    expect(ops[0]!.type).toBe('rebuildTable');
   });
 
-  test('throws on type change', () => {
+  test('type change produces rebuildTable', () => {
     const from: SchemaState = {
       version: 1,
       tables: {
@@ -322,10 +326,12 @@ describe('diffSchema', () => {
       },
     };
 
-    expect(() => diffSchemas(from, to)).toThrow('type change');
+    const ops = diffSchemas(from, to);
+    expect(ops).toHaveLength(1);
+    expect(ops[0]!.type).toBe('rebuildTable');
   });
 
-  test('throws on PRIMARY KEY change', () => {
+  test('PRIMARY KEY change produces rebuildTable', () => {
     const from: SchemaState = {
       version: 1,
       tables: {
@@ -347,10 +353,12 @@ describe('diffSchema', () => {
       },
     };
 
-    expect(() => diffSchemas(from, to)).toThrow('PRIMARY KEY change');
+    const ops = diffSchemas(from, to);
+    expect(ops).toHaveLength(1);
+    expect(ops[0]!.type).toBe('rebuildTable');
   });
 
-  test('throws on UNIQUE addition', () => {
+  test('UNIQUE addition produces rebuildTable', () => {
     const from: SchemaState = {
       version: 1,
       tables: {
@@ -378,10 +386,12 @@ describe('diffSchema', () => {
       },
     };
 
-    expect(() => diffSchemas(from, to)).toThrow('adding UNIQUE requires creating a unique index');
+    const ops = diffSchemas(from, to);
+    expect(ops).toHaveLength(1);
+    expect(ops[0]!.type).toBe('rebuildTable');
   });
 
-  test('throws on UNIQUE removal', () => {
+  test('UNIQUE removal produces rebuildTable', () => {
     const from: SchemaState = {
       version: 1,
       tables: {
@@ -409,7 +419,9 @@ describe('diffSchema', () => {
       },
     };
 
-    expect(() => diffSchemas(from, to)).toThrow('removing UNIQUE requires dropping the unique index');
+    const ops = diffSchemas(from, to);
+    expect(ops).toHaveLength(1);
+    expect(ops[0]!.type).toBe('rebuildTable');
   });
 
   test('detects DEFAULT addition', () => {
@@ -448,7 +460,7 @@ describe('diffSchema', () => {
     expect((ops[0] as ModifyColumnOp).changes.defaultValue).toBe('active');
   });
 
-  test('throws on DEFAULT removal', () => {
+  test('DEFAULT removal produces rebuildTable', () => {
     const from: SchemaState = {
       version: 1,
       tables: {
@@ -476,7 +488,9 @@ describe('diffSchema', () => {
       },
     };
 
-    expect(() => diffSchemas(from, to)).toThrow('removing DEFAULT requires a table rebuild');
+    const ops = diffSchemas(from, to);
+    expect(ops).toHaveLength(1);
+    expect(ops[0]!.type).toBe('rebuildTable');
   });
 
   test('detects DEFAULT value change', () => {

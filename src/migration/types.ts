@@ -107,6 +107,13 @@ export interface ModifyIndexOp {
   to: SerializedIndex;
 }
 
+export interface RebuildTableOp {
+  type: 'rebuildTable';
+  tableName: string;
+  oldTable: SerializedTable;
+  newTable: SerializedTable;
+}
+
 export type MigrationOperation =
   | AddTableOp
   | DropTableOp
@@ -117,7 +124,8 @@ export type MigrationOperation =
   | CreateIndexOp
   | DropIndexOp
   | ModifyColumnOp
-  | ModifyIndexOp;
+  | ModifyIndexOp
+  | RebuildTableOp;
 
 // ---------------------------------------------------------------------------
 // Migration file shape

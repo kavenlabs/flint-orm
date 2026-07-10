@@ -263,6 +263,8 @@ function serializeOpArg(op: MigrationOperation): string {
       return `${JSON.stringify(op.tableName)}, ${JSON.stringify(op.columnName)}, ${JSON.stringify(op.changes)}`;
     case 'modifyIndex':
       return `${JSON.stringify(op.tableName)}, ${JSON.stringify(op.indexName)}, ${serializeIndexArg(op.from)}, ${serializeIndexArg(op.to)}`;
+    case 'rebuildTable':
+      return `${JSON.stringify(op.tableName)}, ${serializeTableArg(op.oldTable)}, ${serializeTableArg(op.newTable)}`;
   }
 }
 

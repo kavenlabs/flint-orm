@@ -90,13 +90,13 @@ const users = snakeCase.table('users', {
 
 ### Column Types
 
-| Function    | TS Type   | SQLite Storage     | Notes                                   |
-| ----------- | --------- | ------------------ | --------------------------------------- |
-| `text()`    | `string`  | TEXT               |                                         |
-| `integer()` | `number`  | INTEGER            | Supports `.autoIncrement()`             |
-| `boolean()` | `boolean` | INTEGER (0/1)      | Encodes/decodes automatically           |
-| `json<T>()` | `T`       | TEXT (JSON)        | Generic, encodes/decodes automatically  |
-| `real()`    | `number`  | REAL               |                                         |
+| Function    | TS Type   | SQLite Storage     | Notes                                            |
+| ----------- | --------- | ------------------ | ------------------------------------------------ |
+| `text()`    | `string`  | TEXT               |                                                  |
+| `integer()` | `number`  | INTEGER            | Supports `.autoIncrement()`                      |
+| `boolean()` | `boolean` | INTEGER (0/1)      | Encodes/decodes automatically                    |
+| `json<T>()` | `T`       | TEXT (JSON)        | Generic, encodes/decodes automatically           |
+| `real()`    | `number`  | REAL               |                                                  |
 | `date()`    | `Date`    | INTEGER (epoch ms) | Supports `.defaultNow()`, `.onUpdateTimestamp()` |
 
 ### Column Modifiers

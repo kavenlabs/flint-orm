@@ -25,6 +25,7 @@ import {
   dropIndex,
   modifyColumn,
   modifyIndex,
+  rebuildTable,
 } from './operations.js';
 
 // ---------------------------------------------------------------------------
@@ -80,10 +81,18 @@ function topologicalSort(tables: SerializedTable[]): SerializedTable[] {
 
 // ---------------------------------------------------------------------------
 // Diff two column definitions — returns operations for any differences.
+// If any change is unsafe (requires table rebuild), returns { unsafe: true }
+// so the caller can emit a rebuildTable operation instead.
 // ---------------------------------------------------------------------------
 
-function diffColumns(tableName: string, prevCols: SerializedColumn[], currCols: SerializedColumn[]): MigrationOperation[] {
+interface DiffColumnsResult {
+  ops: MigrationOperation[];
+  unsafe: boolean;
+}
+
+function diffColumns(tableName: string, prevCols: SerializedColumn[], currCols: SerializedColumn[]): DiffColumnsResult {
   const ops: MigrationOperation[] = [];
+  let unsafe = false;
 
   const prevByName = new Map(prevCols.map((c) => [c.name, c]));
   const currByName = new Map(currCols.map((c) => [c.name, c]));
@@ -110,78 +119,67 @@ function diffColumns(tableName: string, prevCols: SerializedColumn[], currCols: 
     const changes: ModifyColumnOp['changes'] = {};
     let hasChanges = false;
 
-    // Type change — unsafe, throw
+    // Type change — unsafe (SQLite has no ALTER COLUMN TYPE)
     if (prevCol.sqlType !== currCol.sqlType) {
-      throw new Error(
-        `Column "${tableName}.${name}" type change (${prevCol.sqlType} → ${currCol.sqlType}) requires a table rebuild. Handle this manually.`,
-      );
+      unsafe = true;
     }
 
-    // PRIMARY KEY change — unsafe, throw
+    // PRIMARY KEY change — unsafe
     if (prevCol.isPrimaryKey !== currCol.isPrimaryKey) {
-      throw new Error(`Column "${tableName}.${name}" PRIMARY KEY change requires a table rebuild. Handle this manually.`);
+      unsafe = true;
     }
 
     // NOT NULL change
     if (prevCol.isNotNull !== currCol.isNotNull) {
       // Removing NOT NULL — unsafe
       if (prevCol.isNotNull && !currCol.isNotNull) {
-        throw new Error(`Column "${tableName}.${name}" removing NOT NULL requires a table rebuild. Handle this manually.`);
+        unsafe = true;
       }
       // Adding NOT NULL — safe only if column has a DEFAULT
       if (!prevCol.isNotNull && currCol.isNotNull) {
         if (!currCol.hasDefault) {
-          throw new Error(`Column "${tableName}.${name}" adding NOT NULL requires a DEFAULT value. Add a default: .default(value)`);
+          unsafe = true;
+        } else {
+          changes.isNotNull = true;
+          hasChanges = true;
         }
-        changes.isNotNull = true;
-        hasChanges = true;
       }
     }
 
-    // UNIQUE change — throw (requires index manipulation)
+    // UNIQUE change — requires index manipulation, mark unsafe
     if (prevCol.isUnique !== currCol.isUnique) {
-      if (currCol.isUnique) {
-        throw new Error(
-          `Column "${tableName}.${name}" adding UNIQUE requires creating a unique index. Use index(): index("idx_${tableName}_${name}").on(t.${name}).unique()`,
-        );
-      } else {
-        throw new Error(`Column "${tableName}.${name}" removing UNIQUE requires dropping the unique index.`);
-      }
+      unsafe = true;
     }
 
     // DEFAULT change
     if (prevCol.hasDefault !== currCol.hasDefault || prevCol.defaultValue !== currCol.defaultValue) {
       // Removing DEFAULT — SQLite has no DROP DEFAULT syntax
       if (prevCol.hasDefault && !currCol.hasDefault) {
-        throw new Error(`Column "${tableName}.${name}" removing DEFAULT requires a table rebuild. Handle this manually.`);
+        unsafe = true;
       }
       // Changing or adding DEFAULT — safe
-      changes.hasDefault = currCol.hasDefault;
-      changes.defaultValue = currCol.defaultValue;
-      hasChanges = true;
+      if (!unsafe || hasChanges) {
+        changes.hasDefault = currCol.hasDefault;
+        changes.defaultValue = currCol.defaultValue;
+        hasChanges = true;
+      }
     }
 
     // FK target change — unsafe (SQLite requires table rebuild)
     if (prevCol.referencesTable !== currCol.referencesTable || prevCol.referencesColumn !== currCol.referencesColumn) {
-      throw new Error(
-        `Column "${tableName}.${name}" foreign key target change requires a table rebuild. Handle this manually.`,
-      );
+      unsafe = true;
     }
 
     // FK add/remove — unsafe (SQLite requires table rebuild)
     const hadFk = !!prevCol.referencesTable;
     const hasFk = !!currCol.referencesTable;
     if (hadFk !== hasFk) {
-      throw new Error(
-        `Column "${tableName}.${name}" foreign key ${hadFk ? 'removal' : 'addition'} requires a table rebuild. Handle this manually.`,
-      );
+      unsafe = true;
     }
 
     // FK action change — unsafe (SQLite requires table rebuild to change FK actions)
     if (prevCol.onDelete !== currCol.onDelete || prevCol.onUpdate !== currCol.onUpdate) {
-      throw new Error(
-        `Column "${tableName}.${name}" foreign key action change requires a table rebuild. Handle this manually.`,
-      );
+      unsafe = true;
     }
 
     if (hasChanges) {
@@ -189,7 +187,7 @@ function diffColumns(tableName: string, prevCols: SerializedColumn[], currCols: 
     }
   }
 
-  return ops;
+  return { ops, unsafe };
 }
 
 // ---------------------------------------------------------------------------
@@ -197,10 +195,15 @@ function diffColumns(tableName: string, prevCols: SerializedColumn[], currCols: 
 // ---------------------------------------------------------------------------
 
 function diffTable(tableName: string, prev: SerializedTable, curr: SerializedTable): MigrationOperation[] {
-  const ops: MigrationOperation[] = [];
+  const { ops: columnOps, unsafe } = diffColumns(tableName, prev.columns, curr.columns);
 
-  // Column changes
-  ops.push(...diffColumns(tableName, prev.columns, curr.columns));
+  // Any unsafe column change → rebuild entire table
+  if (unsafe) {
+    return [rebuildTable(tableName, prev, curr)];
+  }
+
+  // All changes are safe → emit column-level ops + index changes
+  const ops: MigrationOperation[] = [...columnOps];
 
   // Index changes
   const prevIndexes = new Map(prev.indexes.map((i) => [i.name, i]));

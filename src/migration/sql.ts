@@ -3,7 +3,7 @@
 // Each operation maps to exactly one known-correct SQL statement.
 // ---------------------------------------------------------------------------
 
-import type { MigrationOperation, SerializedColumn, SerializedIndex } from './types.js';
+import type { MigrationOperation, SerializedColumn, SerializedIndex, RebuildTableOp } from './types.js';
 
 // ---------------------------------------------------------------------------
 // Column → SQL type
@@ -67,6 +67,56 @@ function formatDefault(value: unknown): string {
 }
 
 // ---------------------------------------------------------------------------
+// Rebuild table → SQL (CREATE temp → copy → drop → rename → recreate indexes)
+// ---------------------------------------------------------------------------
+
+function rebuildTableToSQL(op: RebuildTableOp): string[] {
+  const { tableName, oldTable, newTable } = op;
+  const tempName = `_flint_rebuild_${tableName}`;
+
+  const stmts: string[] = [];
+
+  // Disable FK checks for the duration of the rebuild (transaction-scoped)
+  stmts.push('PRAGMA defer_foreign_keys = 1');
+
+  // Create temporary table with the new schema
+  const cols = newTable.columns.map(columnToDDL).join(',\n  ');
+  stmts.push(`CREATE TABLE ${tempName} (\n  ${cols}\n)`);
+
+  // Build explicit INSERT with column mapping.
+  // Uses the NEW schema's column order so SQLite maps values correctly.
+  // Columns only in new (added) get their DEFAULT via omitted column.
+  // Columns only in old (dropped) are skipped.
+  const oldColSet = new Set(oldTable.columns.map((c) => c.name));
+  const insertCols: string[] = [];
+  const selectExprs: string[] = [];
+
+  for (const newCol of newTable.columns) {
+    insertCols.push(newCol.name);
+    if (oldColSet.has(newCol.name)) {
+      // Column exists in old table — copy its value
+      selectExprs.push(newCol.name);
+    } else {
+      // Column is new — use DEFAULT
+      selectExprs.push(`DEFAULT`);
+    }
+  }
+
+  stmts.push(`INSERT INTO ${tempName} (${insertCols.join(', ')}) SELECT ${selectExprs.join(', ')} FROM ${tableName}`);
+
+  // Drop old table and rename temp to original
+  stmts.push(`DROP TABLE ${tableName}`);
+  stmts.push(`ALTER TABLE ${tempName} RENAME TO ${tableName}`);
+
+  // Recreate indexes on the new table
+  for (const idx of newTable.indexes) {
+    stmts.push(indexToSQL(idx, tableName));
+  }
+
+  return stmts;
+}
+
+// ---------------------------------------------------------------------------
 // Operation → SQL
 // ---------------------------------------------------------------------------
 
@@ -118,11 +168,11 @@ function operationToSQL(op: MigrationOperation): string[] {
       return stmts;
     }
 
-    case 'modifyIndex': {
-      const unique = op.to.unique ? 'UNIQUE ' : '';
-      const columns = op.to.columns.join(', ');
-      return [`DROP INDEX IF EXISTS ${op.indexName}`, `CREATE ${unique}INDEX ${op.indexName} ON ${op.tableName} (${columns})`];
-    }
+    case 'modifyIndex':
+      return [`DROP INDEX IF EXISTS ${op.indexName}`, indexToSQL(op.to, op.tableName)];
+
+    case 'rebuildTable':
+      return rebuildTableToSQL(op);
   }
 }
 

@@ -14,6 +14,7 @@ import type {
   DropIndexOp,
   ModifyColumnOp,
   ModifyIndexOp,
+  RebuildTableOp,
   SerializedColumn,
   SerializedIndex,
   SerializedTable,
@@ -57,4 +58,8 @@ export function modifyColumn(tableName: string, columnName: string, changes: Mod
 
 export function modifyIndex(tableName: string, indexName: string, from: SerializedIndex, to: SerializedIndex): ModifyIndexOp {
   return { type: 'modifyIndex', tableName, indexName, from, to };
+}
+
+export function rebuildTable(tableName: string, oldTable: SerializedTable, newTable: SerializedTable): RebuildTableOp {
+  return { type: 'rebuildTable', tableName, oldTable, newTable };
 }
