@@ -130,7 +130,8 @@ function diffColumns(tableName: string, prevCols: SerializedColumn[], currCols: 
     }
 
     // AUTOINCREMENT change — unsafe (SQLite requires table rebuild)
-    if ((prevCol.isAutoIncrement ?? false) !== (currCol.isAutoIncrement ?? false)) {
+    // Skip if prevCol lacks the field entirely (upgrade from pre-0.4.5)
+    if (prevCol.isAutoIncrement !== undefined && (prevCol.isAutoIncrement ?? false) !== (currCol.isAutoIncrement ?? false)) {
       unsafe = true;
     }
 

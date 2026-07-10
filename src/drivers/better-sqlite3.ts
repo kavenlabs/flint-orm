@@ -62,7 +62,8 @@ export class BetterSqlite3Executor implements Executor {
  * import { flint } from 'flint-orm/better-sqlite3'
  * const db = flint({ url: './app.db' })
  */
-export function flint(details: { url: string }) {
-  const client = new Database(details.url);
+export function flint(options: { url: string } & Database.Options) {
+  const { url, ...opts } = options;
+  const client = new Database(url, Object.keys(opts).length ? opts : undefined);
   return createClient(new BetterSqlite3Executor(client));
 }

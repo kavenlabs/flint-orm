@@ -3,7 +3,7 @@
 // ---------------------------------------------------------------------------
 
 import { createClient as createLibsqlClient } from '@libsql/client';
-import type { Client } from '@libsql/client';
+import type { Client, Config } from '@libsql/client';
 import { resolve } from 'node:path';
 import type { Executor } from '../executor';
 import { createClient } from '../flint';
@@ -60,11 +60,6 @@ export class LibsqlExecutor implements Executor {
   }
 }
 
-export interface LibSQLConnectionDetails {
-  url: string;
-  authToken?: string;
-}
-
 /**
  * Create a flint database client using @libsql/client.
  *
@@ -72,10 +67,7 @@ export interface LibSQLConnectionDetails {
  * import { flint } from 'flint-orm/libsql'
  * const db = flint({ url: 'libsql://your-db.turso.io', authToken: '...' })
  */
-export function flint(details: LibSQLConnectionDetails) {
-  const client = createLibsqlClient({
-    url: normalizeUrl(details.url),
-    authToken: details.authToken,
-  });
+export function flint(options: Config) {
+  const client = createLibsqlClient({ ...options, url: normalizeUrl(options.url) });
   return createClient(new LibsqlExecutor(client));
 }

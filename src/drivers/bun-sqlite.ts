@@ -3,7 +3,7 @@
 // ---------------------------------------------------------------------------
 
 import { Database } from 'bun:sqlite';
-import type { SQLQueryBindings } from 'bun:sqlite';
+import type { DatabaseOptions, SQLQueryBindings } from 'bun:sqlite';
 import type { Executor } from '../executor';
 import { createClient } from '../flint';
 
@@ -63,7 +63,8 @@ export class BunSqliteExecutor implements Executor {
  * import { flint } from 'flint-orm/bun-sqlite'
  * const db = flint({ url: './app.db' })
  */
-export function flint(details: { url: string }) {
-  const client = new Database(details.url);
+export function flint(options: { url: string } & DatabaseOptions) {
+  const { url, ...opts } = options;
+  const client = new Database(url, Object.keys(opts).length ? opts : undefined);
   return createClient(new BunSqliteExecutor(client));
 }

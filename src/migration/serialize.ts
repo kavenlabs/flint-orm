@@ -25,6 +25,10 @@ function serializeColumn(col: ColumnDef<any, any>): SerializedColumn {
     defaultValue: internal.defaultValue,
   };
 
+  if (result.isAutoIncrement && !result.isPrimaryKey) {
+    throw new Error(`Column "${col.name}": autoIncrement() requires primaryKey()`);
+  }
+
   if (internal.referencesTable && internal.referencesColumn) {
     result.referencesTable = internal.referencesTable;
     result.referencesColumn = internal.referencesColumn;

@@ -3,7 +3,7 @@
 // ---------------------------------------------------------------------------
 
 import { createClient as createLibsqlClient } from '@libsql/client/web';
-import type { Client } from '@libsql/client';
+import type { Client, Config } from '@libsql/client';
 import type { Executor } from '../executor';
 import { createClient } from '../flint';
 
@@ -50,12 +50,6 @@ export class LibsqlWebExecutor implements Executor {
   }
 }
 
-export interface LibSQLWebConnectionDetails {
-  /** Database URL — must use ws:, wss:, http:, or https: scheme. */
-  url: string;
-  authToken?: string;
-}
-
 /**
  * Create a flint database client using @libsql/client/web.
  *
@@ -66,7 +60,7 @@ export interface LibSQLWebConnectionDetails {
  * import { flint } from 'flint-orm/libsql-web'
  * const db = flint({ url: 'libsql://your-db.turso.io', authToken: '...' })
  */
-export function flint(details: LibSQLWebConnectionDetails) {
-  const client = createLibsqlClient({ url: details.url, authToken: details.authToken });
+export function flint(options: Config) {
+  const client = createLibsqlClient(options);
   return createClient(new LibsqlWebExecutor(client));
 }

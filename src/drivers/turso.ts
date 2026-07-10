@@ -55,7 +55,8 @@ export class TursoExecutor implements Executor {
  * import { flint } from 'flint-orm/turso'
  * const db = await flint({ url: './app.db' })
  */
-export async function flint(details: { url: string }) {
-  const db = await connect(details.url);
+export async function flint(options: { url: string } & Parameters<typeof connect>[1]) {
+  const { url, ...opts } = options;
+  const db = await connect(url, Object.keys(opts).length ? (opts as Parameters<typeof connect>[1]) : undefined);
   return createClient(new TursoExecutor(db));
 }

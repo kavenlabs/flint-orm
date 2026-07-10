@@ -3,7 +3,7 @@
 // ---------------------------------------------------------------------------
 
 import { connect } from '@tursodatabase/sync';
-import type { Database } from '@tursodatabase/sync';
+import type { Database, DatabaseOpts } from '@tursodatabase/sync';
 import { resolve } from 'node:path';
 import type { Executor } from '../executor';
 import { createClient } from '../flint';
@@ -49,13 +49,13 @@ export class TursoSyncExecutor implements Executor {
   }
 }
 
-export interface TursoSyncConnectionDetails {
+export interface TursoSyncOptions extends Omit<DatabaseOpts, 'path' | 'url' | 'authToken'> {
   /** Local path for the synced database files. */
   url: string;
   /** Remote Turso database URL (libsql://...). */
   syncUrl?: string;
   /** Auth token for the remote database. */
-  authToken?: string;
+  authToken?: DatabaseOpts['authToken'];
 }
 
 /**
@@ -65,12 +65,14 @@ export interface TursoSyncConnectionDetails {
  * import { flint } from 'flint-orm/turso-sync'
  * const db = flint({ url: './local.db', syncUrl: 'libsql://db.turso.io', authToken: '...' })
  */
-export async function flint(details: TursoSyncConnectionDetails) {
-  const localPath = details.url.includes('://') ? details.url : resolve(details.url);
+export async function flint(options: TursoSyncOptions) {
+  const { url, syncUrl, authToken, ...rest } = options;
+  const localPath = url.includes('://') ? url : resolve(url);
   const db = await connect({
     path: localPath,
-    url: details.syncUrl,
-    authToken: details.authToken,
+    url: syncUrl,
+    authToken,
+    ...rest,
   });
   return createClient(new TursoSyncExecutor(db));
 }
