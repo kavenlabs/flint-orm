@@ -31,9 +31,56 @@ interface FlintConfig {
 
 async function loadConfig(): Promise<FlintConfig> {
   const configPath = resolve(process.cwd(), 'flint.config.ts');
+
+  if (!existsSync(configPath)) {
+    note(
+      `Could not find ${pc.bold('flint.config.ts')} in the current directory.\n\n` +
+        `Create one with:\n\n` +
+        `  ${pc.dim("import { defineConfig } from 'flint-orm/config';")}\n` +
+        `  ${pc.dim('export default defineConfig({')}\n` +
+        `  ${pc.dim("  driver: 'bun-sqlite',")}\n` +
+        `  ${pc.dim("  database: { url: './app.db' },")}\n` +
+        `  ${pc.dim("  schema: './db',")}\n` +
+        `  ${pc.dim('});')}\n`,
+      'Missing config'
+    );
+    process.exit(1);
+  }
+
   const configUrl = pathToFileURL(configPath).href;
   const mod = await import(configUrl);
-  return mod.default as FlintConfig;
+  const config = mod.default as FlintConfig | undefined;
+
+  if (!config || typeof config !== 'object') {
+    note(
+      `${pc.bold('flint.config.ts')} does not export a config object.\n\n` +
+        `Make sure it has a default export:\n\n` +
+        `  ${pc.dim('export default defineConfig({ ... })')}\n`,
+      'Invalid config'
+    );
+    process.exit(1);
+  }
+
+  const missing: string[] = [];
+  if (!config.driver) missing.push('driver');
+  if (!config.database) missing.push('database');
+  if (!config.schema) missing.push('schema');
+
+  if (missing.length > 0) {
+    note(
+      `${pc.bold('flint.config.ts')} is missing required fields: ${pc.bold(missing.join(', '))}\n\n` +
+        `A valid config looks like:\n\n` +
+        `  ${pc.dim('export default defineConfig({')}\n` +
+        `  ${pc.dim("  driver: 'bun-sqlite',")}\n` +
+        `  ${pc.dim("  database: { url: './app.db' },")}\n` +
+        `  ${pc.dim("  schema: './db',")}\n` +
+        `  ${pc.dim('});')}\n`,
+      'Invalid config'
+    );
+    process.exit(1);
+  }
+
+  return config;
 }
 
 // ---------------------------------------------------------------------------
@@ -52,6 +99,16 @@ function isTableDef(value: unknown): boolean {
 
 async function discoverTables(schemaPath: string): Promise<unknown[]> {
   const abs = isAbsolute(schemaPath) ? schemaPath : resolve(process.cwd(), schemaPath);
+
+  if (!existsSync(abs)) {
+    note(
+      `Schema path ${pc.bold(abs)} does not exist.\n\n` +
+        `Check the ${pc.bold('schema')} field in your ${pc.bold('flint.config.ts')}.`,
+      'Schema not found'
+    );
+    process.exit(1);
+  }
+
   const stat = statSync(abs);
 
   if (stat.isFile()) {
@@ -62,12 +119,30 @@ async function discoverTables(schemaPath: string): Promise<unknown[]> {
     return importTableFolder(abs);
   }
 
-  throw new Error(`Schema path does not exist: ${abs}`);
+  note(
+    `Schema path ${pc.bold(abs)} is not a file or directory.`,
+    'Invalid schema path'
+  );
+  process.exit(1);
 }
 
 async function importTableFile(filePath: string): Promise<unknown[]> {
   const url = pathToFileURL(filePath).href;
-  const mod = await import(url);
+  let mod: Record<string, unknown>;
+
+  try {
+    mod = await import(url);
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    note(
+      `Could not load schema file ${pc.bold(filePath)}:\n\n` +
+        `  ${pc.dim(msg)}\n\n` +
+        `Make sure the file exports table() definitions.`,
+      'Schema import error'
+    );
+    process.exit(1);
+  }
+
   const tables: unknown[] = [];
 
   for (const exportValue of Object.values(mod)) {
@@ -128,7 +203,16 @@ async function cmdGenerate(args: ReturnType<typeof parseArgs>['values'], config:
       for (const folder of folders) {
         const statePath = join(migrationsDir, folder, 'state.json');
         if (existsSync(statePath)) {
-          previousState = JSON.parse(readFileSync(statePath, 'utf-8'));
+          try {
+            previousState = JSON.parse(readFileSync(statePath, 'utf-8'));
+          } catch {
+            note(
+              `Could not parse ${pc.bold(statePath)}.\n\n` +
+                `The file may be corrupted. Delete it and run ${pc.bold('flint generate')} again.`,
+              'Invalid state file'
+            );
+            process.exit(1);
+          }
           break;
         }
       }
@@ -170,7 +254,9 @@ async function cmdGenerate(args: ReturnType<typeof parseArgs>['values'], config:
     if (err instanceof Error && err.message.includes('No changes detected')) {
       outro('Schema is already up to date.');
     } else {
-      throw err;
+      const msg = err instanceof Error ? err.message : String(err);
+      note(`Migration generation failed:\n\n  ${pc.dim(msg)}`, 'Error');
+      process.exit(1);
     }
   }
 }
@@ -355,7 +441,8 @@ main().catch((err) => {
   if (isCancel(err) || err instanceof CancellationError) {
     cancel('Operation cancelled.');
   } else {
-    cancel(err.message ?? 'An error occurred');
+    const msg = err instanceof Error ? err.message : String(err);
+    note(msg || 'An unexpected error occurred.', 'Error');
   }
   process.exit(1);
 });

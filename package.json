@@ -1,6 +1,6 @@
 {
   "name": "flint-orm",
-  "version": "0.4.2",
+  "version": "0.4.3",
   "bin": {
     "flint": "./dist/src/cli.js"
   },
