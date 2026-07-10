@@ -25,7 +25,7 @@ jobs:
 
       - run: bun test
 
-      - run: bun build --target=bun --outfile=dist/index.js src/index.ts
+      - run: bun run build
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
