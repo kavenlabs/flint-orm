@@ -274,48 +274,74 @@ async function cmdMigrate(args: ReturnType<typeof parseArgs>['values'], config: 
 
   let executor: Executor;
 
-  switch (config.driver) {
-    case 'bun-sqlite': {
-      const { BunSqliteExecutor } = await import('./drivers/bun-sqlite');
-      const { Database } = await import('bun:sqlite');
-      executor = new BunSqliteExecutor(new Database(dbUrl));
-      break;
+  const DRIVER_PACKAGES: Record<string, string> = {
+    'better-sqlite3': 'better-sqlite3',
+    libsql: '@libsql/client',
+    'libsql-web': '@libsql/client',
+    turso: '@tursodatabase/database',
+    'turso-sync': '@tursodatabase/sync',
+  };
+
+  try {
+    switch (config.driver) {
+      case 'bun-sqlite': {
+        const { BunSqliteExecutor } = await import('./drivers/bun-sqlite');
+        const { Database } = await import('bun:sqlite');
+        executor = new BunSqliteExecutor(new Database(dbUrl));
+        break;
+      }
+      case 'better-sqlite3': {
+        const { BetterSqlite3Executor } = await import('./drivers/better-sqlite3');
+        const Database = (await import('better-sqlite3')).default;
+        executor = new BetterSqlite3Executor(new Database(dbUrl));
+        break;
+      }
+      case 'libsql': {
+        const { LibsqlExecutor } = await import('./drivers/libsql');
+        const { createClient: createLibsqlClient } = await import('@libsql/client');
+        executor = new LibsqlExecutor(createLibsqlClient({ url: dbUrl, authToken: config.database.authToken }));
+        break;
+      }
+      case 'libsql-web': {
+        const { LibsqlWebExecutor } = await import('./drivers/libsql-web');
+        const { createClient: createLibsqlWebClient } = await import('@libsql/client/web');
+        executor = new LibsqlWebExecutor(createLibsqlWebClient({ url: dbUrl, authToken: config.database.authToken }));
+        break;
+      }
+      case 'turso-sync': {
+        const { TursoSyncExecutor } = await import('./drivers/turso-sync');
+        const { connect } = await import('@tursodatabase/sync');
+        const db = await connect({ path: dbUrl, authToken: config.database.authToken });
+        executor = new TursoSyncExecutor(db);
+        break;
+      }
+      case 'turso': {
+        const { TursoExecutor } = await import('./drivers/turso');
+        const { connect } = await import('@tursodatabase/database');
+        const db = await connect(dbUrl);
+        executor = new TursoExecutor(db);
+        break;
+      }
+      default:
+        cancel(`Unsupported driver: ${config.driver}`);
+        process.exit(1);
     }
-    case 'better-sqlite3': {
-      const { BetterSqlite3Executor } = await import('./drivers/better-sqlite3');
-      const Database = (await import('better-sqlite3')).default;
-      executor = new BetterSqlite3Executor(new Database(dbUrl));
-      break;
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    const pkg = DRIVER_PACKAGES[config.driver];
+
+    if (pkg && (msg.includes('Cannot find module') || msg.includes('ERR_MODULE_NOT_FOUND') || msg.includes('not found'))) {
+      const installCmd = pkg === '@libsql/client' ? 'npm install @libsql/client' : `npm install ${pkg}`;
+      note(
+        `Driver "${config.driver}" is not installed.\n\n` +
+          `Install it with:\n\n` +
+          `  ${pc.dim(installCmd)}\n`,
+        'Missing driver'
+      );
+    } else {
+      note(`Failed to load driver "${config.driver}":\n\n  ${pc.dim(msg)}`, 'Error');
     }
-    case 'libsql': {
-      const { LibsqlExecutor } = await import('./drivers/libsql');
-      const { createClient: createLibsqlClient } = await import('@libsql/client');
-      executor = new LibsqlExecutor(createLibsqlClient({ url: dbUrl, authToken: config.database.authToken }));
-      break;
-    }
-    case 'libsql-web': {
-      const { LibsqlWebExecutor } = await import('./drivers/libsql-web');
-      const { createClient: createLibsqlWebClient } = await import('@libsql/client/web');
-      executor = new LibsqlWebExecutor(createLibsqlWebClient({ url: dbUrl, authToken: config.database.authToken }));
-      break;
-    }
-    case 'turso-sync': {
-      const { TursoSyncExecutor } = await import('./drivers/turso-sync');
-      const { connect } = await import('@tursodatabase/sync');
-      const db = await connect({ path: dbUrl, authToken: config.database.authToken });
-      executor = new TursoSyncExecutor(db);
-      break;
-    }
-    case 'turso': {
-      const { TursoExecutor } = await import('./drivers/turso');
-      const { connect } = await import('@tursodatabase/database');
-      const db = await connect(dbUrl);
-      executor = new TursoExecutor(db);
-      break;
-    }
-    default:
-      cancel(`Unsupported driver: ${config.driver}`);
-      process.exit(1);
+    process.exit(1);
   }
 
   try {
