@@ -7,6 +7,7 @@ export interface SerializedColumn {
   name: string;
   sqlType: 'text' | 'integer' | 'real' | 'blob';
   isPrimaryKey: boolean;
+  isAutoIncrement?: boolean;
   isNotNull: boolean;
   isUnique: boolean;
   hasDefault: boolean;

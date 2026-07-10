@@ -21,6 +21,7 @@ function columnToDDL(col: SerializedColumn): string {
   const parts: string[] = [col.name, sqlType(col)];
 
   if (col.isPrimaryKey) parts.push('PRIMARY KEY');
+  if (col.isAutoIncrement === true) parts.push('AUTOINCREMENT');
   if (col.isNotNull && !col.isPrimaryKey) parts.push('NOT NULL');
   if (col.isUnique && !col.isPrimaryKey) parts.push('UNIQUE');
 

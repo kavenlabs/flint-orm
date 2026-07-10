@@ -269,24 +269,7 @@ function serializeOpArg(op: MigrationOperation): string {
 }
 
 function serializeColumnArg(col: SerializedColumn): string {
-  const obj: Record<string, unknown> = {
-    name: col.name,
-    sqlType: col.sqlType,
-    isPrimaryKey: col.isPrimaryKey,
-    isNotNull: col.isNotNull,
-    isUnique: col.isUnique,
-    hasDefault: col.hasDefault,
-    defaultValue: col.defaultValue,
-  };
-
-  if (col.referencesTable && col.referencesColumn) {
-    obj.referencesTable = col.referencesTable;
-    obj.referencesColumn = col.referencesColumn;
-    if (col.onDelete) obj.onDelete = col.onDelete;
-    if (col.onUpdate) obj.onUpdate = col.onUpdate;
-  }
-
-  return JSON.stringify(obj);
+  return JSON.stringify(col);
 }
 
 function serializeIndexArg(idx: SerializedIndex): string {
@@ -349,7 +332,7 @@ export async function generate(tables: TableDef<any>[], migrationsDir: string, n
 
   // Write the migration file
   const uniqueOps = [...new Set(operations.map((op) => op.type))];
-  const imports = uniqueOps.map((op) => `import { ${op} } from "flint-orm/migration/operations";`).join('\n');
+  const imports = uniqueOps.map((op) => `import { ${op} } from "flint-orm/migration";`).join('\n');
 
   const operationLines = operations
     .map((op) => {

@@ -18,6 +18,7 @@ function serializeColumn(col: ColumnDef<any, any>): SerializedColumn {
     name: col.name,
     sqlType: internal.sqlType,
     isPrimaryKey: internal.isPrimaryKey,
+    isAutoIncrement: internal.isAutoIncrement ?? false,
     isNotNull: internal.isNotNull,
     isUnique: internal.isUnique,
     hasDefault: internal.hasDefault,

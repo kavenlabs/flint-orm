@@ -129,6 +129,11 @@ function diffColumns(tableName: string, prevCols: SerializedColumn[], currCols: 
       unsafe = true;
     }
 
+    // AUTOINCREMENT change — unsafe (SQLite requires table rebuild)
+    if ((prevCol.isAutoIncrement ?? false) !== (currCol.isAutoIncrement ?? false)) {
+      unsafe = true;
+    }
+
     // NOT NULL change
     if (prevCol.isNotNull !== currCol.isNotNull) {
       // Removing NOT NULL — unsafe
