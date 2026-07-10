@@ -27,6 +27,8 @@ function serializeColumn(col: ColumnDef<any, any>): SerializedColumn {
   if (internal.referencesTable && internal.referencesColumn) {
     result.referencesTable = internal.referencesTable;
     result.referencesColumn = internal.referencesColumn;
+    if (internal.onDelete && internal.onDelete !== 'no action') result.onDelete = internal.onDelete;
+    if (internal.onUpdate && internal.onUpdate !== 'no action') result.onUpdate = internal.onUpdate;
   }
 
   return result;

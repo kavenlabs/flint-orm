@@ -36,7 +36,10 @@ function columnToDDL(col: SerializedColumn): string {
   }
 
   if (col.referencesTable && col.referencesColumn) {
-    parts.push(`REFERENCES ${col.referencesTable}(${col.referencesColumn})`);
+    let fkClause = `REFERENCES ${col.referencesTable}(${col.referencesColumn})`;
+    if (col.onDelete) fkClause += ` ON DELETE ${col.onDelete.toUpperCase()}`;
+    if (col.onUpdate) fkClause += ` ON UPDATE ${col.onUpdate.toUpperCase()}`;
+    parts.push(fkClause);
   }
 
   return parts.join(' ');

@@ -1,3 +1,6 @@
+/** Foreign key referential action. */
+export type ForeignKeyAction = 'cascade' | 'set null' | 'set default' | 'restrict' | 'no action';
+
 // Column definitions
 /**
  * A column definition with chainable modifiers.
@@ -21,6 +24,10 @@ export interface ColumnDef<T, S extends string = string> {
    * text("userId").references(users.id)
    */
   references(target: ColumnDef<any, any>): ColumnDef<T, S>;
+  /** Set ON DELETE action for the foreign key. Requires `.references()` to be called first. */
+  onDelete(action: ForeignKeyAction): ColumnDef<T, S>;
+  /** Set ON UPDATE action for the foreign key. Requires `.references()` to be called first. */
+  onUpdate(action: ForeignKeyAction): ColumnDef<T, S>;
   readonly __internal: {
     /** Phantom — exists only at the type level, never accessed at runtime. */
     readonly _type: T;
@@ -39,6 +46,9 @@ export interface ColumnDef<T, S extends string = string> {
     /** Foreign key reference — table and column names. */
     readonly referencesTable: string | null;
     readonly referencesColumn: string | null;
+    /** Foreign key referential actions. */
+    readonly onDelete: ForeignKeyAction | null;
+    readonly onUpdate: ForeignKeyAction | null;
     /** Converts logical value → storage value. Called by the builder. */
     readonly encode: (value: T) => unknown;
     /** Converts storage value → logical value. Called by the builder. */
@@ -82,9 +92,9 @@ export interface DateColumnDef extends ColumnDef<Date, 'integer'> {
    * Always set to `Date.now()` on update, regardless of the provided value.
    *
    * @example
-   * const updatedAt = date("updated_at").onUpdate();
+   * const updatedAt = date("updated_at").onUpdateTimestamp();
    */
-  onUpdate(): DateColumnDef;
+  onUpdateTimestamp(): DateColumnDef;
 }
 
 /** A date column with a guaranteed default value, making it non-nullable in query results. */
@@ -95,7 +105,7 @@ export interface DateColumnDefWithDefault extends DateColumnDef {
   default(value: Date): DateColumnDefWithDefault;
   defaultFn(fn: () => Date): DateColumnDefWithDefault;
   defaultNow(): DateColumnDefWithDefault;
-  onUpdate(): DateColumnDefWithDefault;
+  onUpdateTimestamp(): DateColumnDefWithDefault;
 }
 
 // @internal Internal builder
@@ -126,6 +136,8 @@ function makeColumn<T, S extends string>(config: {
       hasOnUpdate: false,
       referencesTable: null as string | null,
       referencesColumn: null as string | null,
+      onDelete: null as ForeignKeyAction | null,
+      onUpdate: null as ForeignKeyAction | null,
       encode: config.encode,
       decode: config.decode,
       tableName: null as string | null,
@@ -158,6 +170,12 @@ function makeColumn<T, S extends string>(config: {
           referencesColumn: target.name,
         },
       };
+    },
+    onDelete(action: ForeignKeyAction) {
+      return { ...this, __internal: { ...this.__internal, onDelete: action } };
+    },
+    onUpdate(action: ForeignKeyAction) {
+      return { ...this, __internal: { ...this.__internal, onUpdate: action } };
     },
   };
 
@@ -301,7 +319,7 @@ export function date(name?: string): DateColumnDef {
     defaultNow() {
       return { ...this, __internal: { ...this.__internal, hasDefaultNow: true } };
     },
-    onUpdate() {
+    onUpdateTimestamp() {
       return { ...this, __internal: { ...this.__internal, hasOnUpdate: true } };
     },
   };

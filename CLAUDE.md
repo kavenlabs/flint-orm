@@ -53,7 +53,7 @@ The shared `Executor` interface (`src/executor.ts`) requires all methods to retu
 
 ### Schema Definitions (`src/schema/`)
 
-- `src/schema/columns.ts`: Column constructors (`text`, `integer`, `boolean`, `json`, `date`, `real`) return immutable `ColumnDef` objects with chainable modifiers (`.primaryKey()`, `.notNull()`, `.unique()`, `.default()`, `.defaultFn()`, `.references()`, `.autoIncrement()`, `.defaultNow()`, `.onUpdate()`). Each column has an `__internal` property with `encode`/`decode` functions for SQLite storage.
+- `src/schema/columns.ts`: Column constructors (`text`, `integer`, `boolean`, `json`, `date`, `real`) return immutable `ColumnDef` objects with chainable modifiers (`.primaryKey()`, `.notNull()`, `.unique()`, `.default()`, `.defaultFn()`, `.references()`, `.onDelete()`, `.onUpdate()`, `.autoIncrement()`, `.defaultNow()`, `.onUpdateTimestamp()`). Each column has an `__internal` property with `encode`/`decode` functions for SQLite storage.
 - `src/schema/table.ts`: `table(name, columns, indexFn?)` stamps the table name onto columns and returns a `TableDef`. `InferRow<T>` and `InsertRow<T>` derive TypeScript row types. Index definitions use a chainable `index("name").on(col).unique()` builder. `snakeCase` variant auto-converts camelCase keys to snake_case SQL names.
 
 ### Migration System (`src/migration/`)

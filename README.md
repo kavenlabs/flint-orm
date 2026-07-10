@@ -66,7 +66,7 @@ const posts = table('posts', {
   price: real('price'),
   metadata: json('metadata').default({}),
   createdAt: date('created_at').defaultNow(),
-  updatedAt: date('updated_at').onUpdate(),
+  updatedAt: date('updated_at').onUpdateTimestamp(),
 });
 ```
 
@@ -80,7 +80,7 @@ const posts = table('posts', {
 - `.references(target)` — foreign key reference
 - `.autoIncrement()` — integer auto-increment (integer columns only)
 - `.defaultNow()` — use `Date.now()` as default (date columns only)
-- `.onUpdate()` — always set to `Date.now()` on update (date columns only)
+- `.onUpdateTimestamp()` — always set to `Date.now()` on update (date columns only)
 
 ### Indexes
 

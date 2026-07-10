@@ -103,10 +103,15 @@ function introspectColumns(
     partial: number;
   }[];
 
-  // Build FK map: column name → { referencesTable, referencesColumn }
-  const fkMap = new Map<string, { referencesTable: string; referencesColumn: string }>();
+  // Build FK map: column name → { referencesTable, referencesColumn, onDelete, onUpdate }
+  const fkMap = new Map<string, { referencesTable: string; referencesColumn: string; onDelete?: string; onUpdate?: string }>();
   for (const fk of fkRows) {
-    fkMap.set(fk.from, { referencesTable: fk.table, referencesColumn: fk.to });
+    fkMap.set(fk.from, {
+      referencesTable: fk.table,
+      referencesColumn: fk.to,
+      onDelete: fk.on_delete !== 'NO ACTION' ? fk.on_delete.toLowerCase() : undefined,
+      onUpdate: fk.on_update !== 'NO ACTION' ? fk.on_update.toLowerCase() : undefined,
+    });
   }
 
   // Build set of columns with UNIQUE constraint
@@ -139,6 +144,8 @@ function introspectColumns(
     if (fk) {
       col.referencesTable = fk.referencesTable;
       col.referencesColumn = fk.referencesColumn;
+      if (fk.onDelete) col.onDelete = fk.onDelete;
+      if (fk.onUpdate) col.onUpdate = fk.onUpdate;
     }
 
     return col;

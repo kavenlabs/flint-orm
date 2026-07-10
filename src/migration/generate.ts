@@ -280,6 +280,8 @@ function serializeColumnArg(col: SerializedColumn): string {
   if (col.referencesTable && col.referencesColumn) {
     obj.referencesTable = col.referencesTable;
     obj.referencesColumn = col.referencesColumn;
+    if (col.onDelete) obj.onDelete = col.onDelete;
+    if (col.onUpdate) obj.onUpdate = col.onUpdate;
   }
 
   return JSON.stringify(obj);

@@ -1,5 +1,5 @@
 // Table definition
-import type { ColumnDef, IntegerColumnDef, DateColumnDef, DateColumnDefWithDefault } from './columns';
+import type { ColumnDef, IntegerColumnDef, DateColumnDef, DateColumnDefWithDefault, ForeignKeyAction } from './columns';
 /** A table definition mapping column names to their `ColumnDef`s. */
 export type TableDef<T> = T & {
   readonly _: { readonly name: string };
@@ -24,7 +24,9 @@ export type AnyTable = {
 type StampedColumn = ColumnDef<any, any> & {
   autoIncrement?: () => ColumnDef<any, any>;
   defaultNow?: () => ColumnDef<any, any>;
-  onUpdate?: () => ColumnDef<any, any>;
+  onUpdateTimestamp?: () => ColumnDef<any, any>;
+  onDelete?: (action: ForeignKeyAction) => ColumnDef<any, any>;
+  onUpdate?: (action: ForeignKeyAction) => ColumnDef<any, any>;
 };
 
 export function table<T extends Record<string, ColumnDef<any, any>>>(
@@ -69,6 +71,12 @@ export function table<T extends Record<string, ColumnDef<any, any>>>(
           },
         };
       },
+      onDelete(action: ForeignKeyAction) {
+        return { ...this, __internal: { ...stampedInternal, onDelete: action } };
+      },
+      onUpdate(action: ForeignKeyAction) {
+        return { ...this, __internal: { ...stampedInternal, onUpdate: action } };
+      },
     };
 
     // Preserve autoIncrement if the original column had it (integer columns)
@@ -78,14 +86,14 @@ export function table<T extends Record<string, ColumnDef<any, any>>>(
       };
     }
 
-    // Preserve defaultNow/onUpdate if the original column had them (date columns)
+    // Preserve defaultNow/onUpdateTimestamp if the original column had them (date columns)
     if ('defaultNow' in col) {
       stampedCol.defaultNow = function () {
         return { ...this, __internal: { ...stampedInternal, hasDefaultNow: true } };
       };
     }
-    if ('onUpdate' in col) {
-      stampedCol.onUpdate = function () {
+    if ('onUpdateTimestamp' in col) {
+      stampedCol.onUpdateTimestamp = function () {
         return { ...this, __internal: { ...stampedInternal, hasOnUpdate: true } };
       };
     }
@@ -202,6 +210,12 @@ export function snakeCaseTable<T extends Record<string, ColumnDef<any, any>>>(
           },
         };
       },
+      onDelete(action: ForeignKeyAction) {
+        return { ...this, __internal: { ...stampedInternal, onDelete: action } };
+      },
+      onUpdate(action: ForeignKeyAction) {
+        return { ...this, __internal: { ...stampedInternal, onUpdate: action } };
+      },
     };
 
     if ('autoIncrement' in col) {
@@ -214,8 +228,8 @@ export function snakeCaseTable<T extends Record<string, ColumnDef<any, any>>>(
         return { ...this, __internal: { ...stampedInternal, hasDefaultNow: true } };
       };
     }
-    if ('onUpdate' in col) {
-      stampedCol.onUpdate = function () {
+    if ('onUpdateTimestamp' in col) {
+      stampedCol.onUpdateTimestamp = function () {
         return { ...this, __internal: { ...stampedInternal, hasOnUpdate: true } };
       };
     }

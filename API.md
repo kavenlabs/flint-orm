@@ -97,7 +97,7 @@ const users = snakeCase.table('users', {
 | `boolean()` | `boolean` | INTEGER (0/1)      | Encodes/decodes automatically           |
 | `json<T>()` | `T`       | TEXT (JSON)        | Generic, encodes/decodes automatically  |
 | `real()`    | `number`  | REAL               |                                         |
-| `date()`    | `Date`    | INTEGER (epoch ms) | Supports `.defaultNow()`, `.onUpdate()` |
+| `date()`    | `Date`    | INTEGER (epoch ms) | Supports `.defaultNow()`, `.onUpdateTimestamp()` |
 
 ### Column Modifiers
 
@@ -124,7 +124,7 @@ integer().autoIncrement(); // AUTOINCREMENT
 ```ts
 date()
   .defaultNow() // DEFAULT (current epoch ms)
-  .onUpdate(); // Always set to now on UPDATE
+  .onUpdateTimestamp(); // Always set to now on UPDATE
 ```
 
 ### `InferRow<T>`

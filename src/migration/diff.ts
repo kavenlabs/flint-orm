@@ -161,6 +161,29 @@ function diffColumns(tableName: string, prevCols: SerializedColumn[], currCols: 
       hasChanges = true;
     }
 
+    // FK target change — unsafe (SQLite requires table rebuild)
+    if (prevCol.referencesTable !== currCol.referencesTable || prevCol.referencesColumn !== currCol.referencesColumn) {
+      throw new Error(
+        `Column "${tableName}.${name}" foreign key target change requires a table rebuild. Handle this manually.`,
+      );
+    }
+
+    // FK add/remove — unsafe (SQLite requires table rebuild)
+    const hadFk = !!prevCol.referencesTable;
+    const hasFk = !!currCol.referencesTable;
+    if (hadFk !== hasFk) {
+      throw new Error(
+        `Column "${tableName}.${name}" foreign key ${hadFk ? 'removal' : 'addition'} requires a table rebuild. Handle this manually.`,
+      );
+    }
+
+    // FK action change — unsafe (SQLite requires table rebuild to change FK actions)
+    if (prevCol.onDelete !== currCol.onDelete || prevCol.onUpdate !== currCol.onUpdate) {
+      throw new Error(
+        `Column "${tableName}.${name}" foreign key action change requires a table rebuild. Handle this manually.`,
+      );
+    }
+
     if (hasChanges) {
       ops.push(modifyColumn(tableName, name, changes));
     }

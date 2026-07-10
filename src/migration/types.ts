@@ -13,6 +13,8 @@ export interface SerializedColumn {
   defaultValue?: unknown;
   referencesTable?: string;
   referencesColumn?: string;
+  onDelete?: string;
+  onUpdate?: string;
 }
 
 /** Serialized table definition — what lives in state.json. */
