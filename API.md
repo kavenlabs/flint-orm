@@ -110,7 +110,9 @@ text()
   .unique() // UNIQUE
   .default('hello') // DEFAULT 'hello'
   .defaultFn(() => new Date()) // DEFAULT (computed at insert)
-  .references(otherColumn); // REFERENCES
+  .references(otherColumn) // REFERENCES otherColumn
+  .onDelete('cascade') // ON DELETE CASCADE
+  .onUpdate('set null'); // ON UPDATE SET NULL
 ```
 
 **Integer-only:**
@@ -591,6 +593,9 @@ import { addTable, dropTable, renameTable, addColumn, dropColumn, renameColumn, 
 | `renameColumn` | `ALTER TABLE ... RENAME COLUMN ... TO` |
 | `createIndex`  | `CREATE [UNIQUE] INDEX ...`            |
 | `dropIndex`    | `DROP INDEX ...`                       |
+| `modifyColumn` | `ALTER TABLE ... ALTER COLUMN ...`     |
+| `modifyIndex`  | `DROP INDEX IF EXISTS ...; CREATE ...` |
+| `rebuildTable` | Temp table → copy → drop → rename     |
 
 ---
 
@@ -606,6 +611,7 @@ import { addTable, dropTable, renameTable, addColumn, dropColumn, renameColumn, 
 | `SQLExpression`   | `{ sql: string; params: unknown[] }`                                                      |
 | `Executable`      | Anything with a `.toSQL()` method (for `batch()`)                                         |
 | `Driver`          | `'bun-sqlite' \| 'better-sqlite3' \| 'libsql' \| 'libsql-web' \| 'turso' \| 'turso-sync'` |
+| `RebuildTableOp`  | Migration op that recreates a table with a new schema                                     |
 
 ---
 

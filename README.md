@@ -78,6 +78,8 @@ const posts = table('posts', {
 - `.default(value)` — static default value
 - `.defaultFn(fn)` — dynamic default (called on insert when value is omitted)
 - `.references(target)` — foreign key reference
+- `.onDelete(action)` — foreign key ON DELETE action (`cascade`, `set null`, `set default`, `restrict`, `no action`)
+- `.onUpdate(action)` — foreign key ON UPDATE action (`cascade`, `set null`, `set default`, `restrict`, `no action`)
 - `.autoIncrement()` — integer auto-increment (integer columns only)
 - `.defaultNow()` — use `Date.now()` as default (date columns only)
 - `.onUpdateTimestamp()` — always set to `Date.now()` on update (date columns only)
@@ -323,7 +325,7 @@ flint migrate --dry-run     # show what would run
 5. Writes a migration folder with `migration.ts` (operations) + `state.json` (snapshot)
 6. `flint migrate` reads pending migrations and executes them in order
 
-Unsafe changes (type changes, primary key changes) throw an error and must be handled manually.
+Unsafe changes (type changes, primary key changes, FK modifications, UNIQUE changes, DEFAULT removal) automatically emit a `rebuildTable` operation that recreates the table with the new schema and copies data safely within a transaction.
 
 ## Subpath Imports
 

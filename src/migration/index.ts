@@ -22,6 +22,7 @@ export {
   dropIndex,
   modifyColumn,
   modifyIndex,
+  rebuildTable,
 } from './operations.js';
 export type {
   SchemaState,
@@ -32,4 +33,5 @@ export type {
   MigrationFile,
   ModifyColumnOp,
   ModifyIndexOp,
+  RebuildTableOp,
 } from './types.js';
