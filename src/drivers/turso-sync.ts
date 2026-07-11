@@ -51,9 +51,9 @@ export class TursoSyncExecutor implements Executor {
 }
 
 export interface TursoSyncOptions extends Omit<DatabaseOpts, 'path' | 'url' | 'authToken'> {
-  /** Local path for the synced database files. */
+  /** Local path for the synced database files (maps to `path` in `@tursodatabase/sync`). */
   url: string;
-  /** Remote Turso database URL (libsql://...). */
+  /** Remote Turso database URL (maps to `url` in `@tursodatabase/sync`). */
   syncUrl?: string;
   /** Auth token for the remote database. */
   authToken?: DatabaseOpts['authToken'];
