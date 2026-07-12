@@ -38,7 +38,7 @@ export class LazyExecutor implements Executor {
     return exec.get(sql, params);
   }
 
-  async run(sql: string, params: unknown[]): Promise<void> {
+  async run(sql: string, params: unknown[]): Promise<{ rowsAffected: number }> {
     const exec = await this.#resolve();
     return exec.run(sql, params);
   }

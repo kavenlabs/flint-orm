@@ -30,8 +30,9 @@ export class TursoSyncExecutor implements Executor {
     return this.#db.get(sql, ...sanitize(params)) ?? null;
   }
 
-  async run(sql: string, params: unknown[]): Promise<void> {
-    await this.#db.run(sql, ...sanitize(params));
+  async run(sql: string, params: unknown[]): Promise<{ rowsAffected: number }> {
+    const result = await this.#db.run(sql, ...sanitize(params));
+    return { rowsAffected: result.changes };
   }
 
   async transaction(fn: () => void | Promise<void>): Promise<void> {

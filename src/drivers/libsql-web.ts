@@ -30,8 +30,9 @@ export class LibsqlWebExecutor implements Executor {
     return result.rows[0] ?? null;
   }
 
-  async run(sql: string, params: unknown[]): Promise<void> {
-    await this.#client.execute({ sql, args: sanitize(params) as never[] });
+  async run(sql: string, params: unknown[]): Promise<{ rowsAffected: number }> {
+    const result = await this.#client.execute({ sql, args: sanitize(params) as never[] });
+    return { rowsAffected: result.rowsAffected };
   }
 
   async transaction(fn: () => void | Promise<void>): Promise<void> {

@@ -1414,7 +1414,7 @@ export class InsertBuilder<T extends AnyTable, R extends boolean = false, K exte
     return { sql, params };
   }
 
-  async execute(): Promise<R extends true ? Prettify<NarrowRow<InferRow<T>, K>>[] : void> {
+  async execute(): Promise<R extends true ? Prettify<NarrowRow<InferRow<T>, K>>[] : { rowsAffected: number }> {
     const { sql, params } = this.toSQL();
     try {
       if (this.#returning) {
@@ -1427,8 +1427,7 @@ export class InsertBuilder<T extends AnyTable, R extends boolean = false, K exte
         }
         return records.map((r) => decodeRow(r, this.#table)) as unknown as R extends true ? Prettify<NarrowRow<InferRow<T>, K>>[] : never;
       }
-      await this.#executor.run(sql, params);
-      return undefined as R extends true ? never : void;
+      return (await this.#executor.run(sql, params)) as R extends true ? never : { rowsAffected: number };
     } catch (e) {
       throw new FlintQueryError(`Failed to execute query: ${sql}`, e as Error);
     }
@@ -1533,7 +1532,7 @@ export class UpdateBuilder<T extends AnyTable, R extends boolean = false, K exte
     return { sql, params };
   }
 
-  async execute(): Promise<R extends true ? Prettify<NarrowRow<InferRow<T>, K>>[] : void> {
+  async execute(): Promise<R extends true ? Prettify<NarrowRow<InferRow<T>, K>>[] : { rowsAffected: number }> {
     const { sql, params } = this.toSQL();
     try {
       if (this.#returning) {
@@ -1546,8 +1545,7 @@ export class UpdateBuilder<T extends AnyTable, R extends boolean = false, K exte
         }
         return records.map((r) => decodeRow(r, this.#table)) as unknown as R extends true ? Prettify<NarrowRow<InferRow<T>, K>>[] : never;
       }
-      await this.#executor.run(sql, params);
-      return undefined as R extends true ? never : void;
+      return (await this.#executor.run(sql, params)) as R extends true ? never : { rowsAffected: number };
     } catch (e) {
       throw new FlintQueryError(`Failed to execute query: ${sql}`, e as Error);
     }
@@ -1605,7 +1603,7 @@ export class DeleteBuilder<T extends AnyTable, R extends boolean = false, K exte
     return { sql, params };
   }
 
-  async execute(): Promise<R extends true ? Prettify<NarrowRow<InferRow<T>, K>>[] : void> {
+  async execute(): Promise<R extends true ? Prettify<NarrowRow<InferRow<T>, K>>[] : { rowsAffected: number }> {
     const { sql, params } = this.toSQL();
     try {
       if (this.#returning) {
@@ -1618,8 +1616,7 @@ export class DeleteBuilder<T extends AnyTable, R extends boolean = false, K exte
         }
         return records.map((r) => decodeRow(r, this.#table)) as unknown as R extends true ? Prettify<NarrowRow<InferRow<T>, K>>[] : never;
       }
-      await this.#executor.run(sql, params);
-      return undefined as R extends true ? never : void;
+      return (await this.#executor.run(sql, params)) as R extends true ? never : { rowsAffected: number };
     } catch (e) {
       throw new FlintQueryError(`Failed to execute query: ${sql}`, e as Error);
     }

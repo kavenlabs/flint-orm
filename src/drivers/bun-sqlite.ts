@@ -23,9 +23,9 @@ export class BunSqliteExecutor implements Executor {
     return Promise.resolve(this.#client.prepare(sql).get(...(params as SQLQueryBindings[])));
   }
 
-  run(sql: string, params: unknown[]): Promise<void> {
-    this.#client.prepare(sql).run(...(params as SQLQueryBindings[]));
-    return Promise.resolve();
+  run(sql: string, params: unknown[]): Promise<{ rowsAffected: number }> {
+    const result = this.#client.prepare(sql).run(...(params as SQLQueryBindings[]));
+    return Promise.resolve({ rowsAffected: result.changes });
   }
 
   transaction(fn: () => void | Promise<void>): Promise<void> {

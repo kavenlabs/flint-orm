@@ -7,8 +7,8 @@ export interface Executor {
   all(sql: string, params: unknown[]): Promise<unknown[]>;
   /** Execute a query and return a single row or null. */
   get(sql: string, params: unknown[]): Promise<unknown>;
-  /** Execute a statement (INSERT, UPDATE, DELETE, DDL). */
-  run(sql: string, params: unknown[]): Promise<void>;
+  /** Execute a statement (INSERT, UPDATE, DELETE, DDL) and return affected row count. */
+  run(sql: string, params: unknown[]): Promise<{ rowsAffected: number }>;
   /** Run a callback inside a transaction. */
   transaction(fn: () => void | Promise<void>): Promise<void>;
   /** Close the underlying database connection. No-op if already closed. */
