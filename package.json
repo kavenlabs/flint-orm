@@ -87,9 +87,17 @@
     "typescript": ">=5.0.0"
   },
   "peerDependenciesMeta": {
-    "@libsql/client": { "optional": true },
-    "@tursodatabase/database": { "optional": true },
-    "@tursodatabase/sync": { "optional": true },
-    "better-sqlite3": { "optional": true }
+    "@libsql/client": {
+      "optional": true
+    },
+    "@tursodatabase/database": {
+      "optional": true
+    },
+    "@tursodatabase/sync": {
+      "optional": true
+    },
+    "better-sqlite3": {
+      "optional": true
+    }
   }
 }

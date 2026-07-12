@@ -1,13 +1,13 @@
 import type { Executor } from './executor';
-import { SelectFromBuilder, InsertValuesBuilder, UpdateSetBuilder, DeleteBuilder, JoinStage1 } from './query/builder';
-import type { Executable, SelectStage1, InsertStage1, UpdateStage1, JoinSelectStage1 } from './query/builder';
+import { SelectBuilder, InsertValuesBuilder, UpdateSetBuilder, DeleteBuilder, JoinStage1 } from './query/builder';
+import type { Executable, InsertStage1, UpdateStage1, JoinSelectStage1 } from './query/builder';
 import { count, countColumn, sum, avg, min, max } from './query/aggregates';
 import type { AnyTable } from './schema/table';
 import type { Condition } from './query/conditions';
 import type { ColumnDef } from './schema/columns';
 
 // Re-export Executable so consumers can type their own batch helpers.
-export type { Executable, SelectStage1, InsertStage1, UpdateStage1, JoinSelectStage1, JoinBuilder, SingleJoinBuilder } from './query/builder';
+export type { Executable, SelectBuilder, InsertStage1, UpdateStage1, JoinSelectStage1, JoinBuilder, SingleJoinBuilder } from './query/builder';
 export type { JoinResult } from './query/builder';
 
 /**
@@ -35,12 +35,12 @@ export interface SQLExpression {
 export function createClient(executor: Executor) {
   return {
     /**
-     * Start a SELECT query — call `.from(table)` next.
+     * Start a SELECT query — pass a table definition.
      *
      * @example
-     * const rows = db.select().from(users).execute()
+     * const rows = db.selectFrom(users).execute()
      */
-    select: (): SelectStage1 => new SelectFromBuilder(executor),
+    selectFrom: <T extends AnyTable>(table: T) => new SelectBuilder(executor, table._.name, table),
 
     /**
      * Start an INSERT — call `.values(row)` next.

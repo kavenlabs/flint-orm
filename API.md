@@ -30,7 +30,7 @@ const users = table('users', {
 const db = flint({ url: './app.db' });
 
 // Query
-const user = await db.select().from(users).where(eq(users.id, 'u1')).single().execute();
+const user = await db.selectFrom(users).where(eq(users.id, 'u1')).single().execute();
 // { id: "u1", name: "Alice", email: "alice@example.com", age: 30, createdAt: Date }
 ```
 
@@ -177,12 +177,12 @@ const users = table(
 
 All `execute()` methods return `Promise<T>` — always `await` regardless of driver.
 
-### `db.select().from(table)`
+### `db.selectFrom(table)`
 
 Start a SELECT query. Two-phase: `.from()` is required before anything else.
 
 ```ts
-await db.select().from(users).execute();
+await db.selectFrom(users).execute();
 // SELECT * FROM users
 ```
 
@@ -191,7 +191,7 @@ await db.select().from(users).execute();
 Narrow which columns appear in the result.
 
 ```ts
-await db.select().from(users).columns(['id', 'name']).execute();
+await db.selectFrom(users).columns(['id', 'name']).execute();
 // SELECT id, name FROM users
 // Returns: { id: string; name: string }[]
 ```
@@ -201,7 +201,7 @@ await db.select().from(users).columns(['id', 'name']).execute();
 Filter rows.
 
 ```ts
-await db.select().from(users).where(eq(users.active, true)).execute();
+await db.selectFrom(users).where(eq(users.active, true)).execute();
 // SELECT * FROM users WHERE active = 1
 ```
 
@@ -210,7 +210,7 @@ await db.select().from(users).where(eq(users.active, true)).execute();
 Return one row or null instead of an array. Adds `LIMIT 1`.
 
 ```ts
-await db.select().from(users).where(eq(users.id, 'u1')).single().execute();
+await db.selectFrom(users).where(eq(users.id, 'u1')).single().execute();
 // SELECT * FROM users WHERE id = ? LIMIT 1
 // Returns: UserRow | null
 ```
@@ -220,7 +220,7 @@ await db.select().from(users).where(eq(users.id, 'u1')).single().execute();
 Sort results. Default direction is `"asc"`.
 
 ```ts
-await db.select().from(users).orderBy('name', 'desc').execute();
+await db.selectFrom(users).orderBy('name', 'desc').execute();
 // SELECT * FROM users ORDER BY name DESC
 ```
 
@@ -229,7 +229,7 @@ await db.select().from(users).orderBy('name', 'desc').execute();
 Limit the number of results.
 
 ```ts
-await db.select().from(users).limit(10).execute();
+await db.selectFrom(users).limit(10).execute();
 // SELECT * FROM users LIMIT 10
 ```
 
@@ -238,7 +238,7 @@ await db.select().from(users).limit(10).execute();
 Skip N rows.
 
 ```ts
-await db.select().from(users).limit(10).offset(20).execute();
+await db.selectFrom(users).limit(10).offset(20).execute();
 // SELECT * FROM users LIMIT 10 OFFSET 20
 ```
 
@@ -247,7 +247,7 @@ await db.select().from(users).limit(10).offset(20).execute();
 Return unique rows.
 
 ```ts
-await db.select().from(users).columns(['name']).distinct().execute();
+await db.selectFrom(users).columns(['name']).distinct().execute();
 // SELECT DISTINCT name FROM users
 ```
 
@@ -536,7 +536,7 @@ import { sql } from 'flint-orm';
 const expr = sql`name = ${'Alice'} AND age > ${18}`;
 // { sql: "name = ? AND age > ?", params: ["Alice", 18] }
 
-const result = await db.select().from(users).where(expr).execute();
+const result = await db.selectFrom(users).where(expr).execute();
 ```
 
 ---
@@ -595,7 +595,7 @@ import { addTable, dropTable, renameTable, addColumn, dropColumn, renameColumn, 
 | `dropIndex`    | `DROP INDEX ...`                       |
 | `modifyColumn` | `ALTER TABLE ... ALTER COLUMN ...`     |
 | `modifyIndex`  | `DROP INDEX IF EXISTS ...; CREATE ...` |
-| `rebuildTable` | Temp table → copy → drop → rename     |
+| `rebuildTable` | Temp table → copy → drop → rename      |
 
 ---
 

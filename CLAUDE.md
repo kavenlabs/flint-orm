@@ -41,9 +41,9 @@ The shared `Executor` interface (`src/executor.ts`) requires all methods to retu
 
 ### Core Query System (`src/flint.ts` + `src/query/`)
 
-`flint(executor)` returns a client with `select()`, `insert()`, `update()`, `delete()`, `leftJoin()`, `innerJoin()`, `batch()`, and aggregate methods. The query builder is a multi-stage fluent API enforced at the type level:
+`flint(executor)` returns a client with `selectFrom()`, `insert()`, `update()`, `delete()`, `leftJoin()`, `innerJoin()`, `batch()`, and aggregate methods. The query builder is a multi-stage fluent API enforced at the type level:
 
-- `db.select().from(table)` → `SelectBuilder` (where, orderBy, limit, offset, columns, single, distinct)
+- `db.selectFrom(table)` → `SelectBuilder` (where, orderBy, limit, offset, columns, single, distinct)
 - `db.insert(table).values(row)` → `InsertBuilder` (onConflictDoNothing, onConflictDoUpdate, returning)
 - `db.update(table).set(partial)` → `UpdateBuilder` (where, returning)
 - `db.delete(table)` → `DeleteBuilder` (where, returning)

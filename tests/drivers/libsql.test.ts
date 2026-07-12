@@ -50,26 +50,26 @@ beforeEach(async () => {
 describe('LibsqlExecutor', () => {
   test('all() returns rows', async () => {
     await client.insert(users).values({ name: 'Alice', email: 'alice@test.com', age: 30 }).execute();
-    const rows = await client.select().from(users).execute();
+    const rows = await client.selectFrom(users).execute();
     expect(rows).toHaveLength(1);
     expect(rows[0]!.name).toBe('Alice');
   });
 
   test('get() returns single row', async () => {
     await client.insert(users).values({ name: 'Bob', email: 'bob@test.com', age: 25 }).execute();
-    const row = await client.select().from(users).where(eq(users.name, 'Bob')).single().execute();
+    const row = await client.selectFrom(users).where(eq(users.name, 'Bob')).single().execute();
     expect(row).not.toBeNull();
     expect(row!.name).toBe('Bob');
   });
 
   test('get() returns null for no match', async () => {
-    const row = await client.select().from(users).where(eq(users.name, 'nobody')).single().execute();
+    const row = await client.selectFrom(users).where(eq(users.name, 'nobody')).single().execute();
     expect(row).toBeNull();
   });
 
   test('run() executes statement', async () => {
     await client.insert(users).values({ name: 'Charlie', email: 'charlie@test.com', age: 35 }).execute();
-    const rows = await client.select().from(users).execute();
+    const rows = await client.selectFrom(users).execute();
     expect(rows).toHaveLength(1);
   });
 
@@ -78,7 +78,7 @@ describe('LibsqlExecutor', () => {
       client.insert(users).values({ name: 'Dave', age: 40 } as InsertRow<typeof users>),
       client.insert(users).values({ name: 'Eve', age: 45 } as InsertRow<typeof users>),
     ]);
-    const rows = await client.select().from(users).execute();
+    const rows = await client.selectFrom(users).execute();
     expect(rows).toHaveLength(2);
   });
 
@@ -117,29 +117,29 @@ describe('query builder via executor', () => {
   });
 
   test('select all', async () => {
-    const rows = await client.select().from(users).execute();
+    const rows = await client.selectFrom(users).execute();
     expect(rows).toHaveLength(2);
   });
 
   test('select with where', async () => {
-    const rows = await client.select().from(users).where(eq(users.name, 'Alice')).execute();
+    const rows = await client.selectFrom(users).where(eq(users.name, 'Alice')).execute();
     expect(rows).toHaveLength(1);
     expect(rows[0]!.name).toBe('Alice');
   });
 
   test('select single', async () => {
-    const row = await client.select().from(users).where(eq(users.name, 'Alice')).single().execute();
+    const row = await client.selectFrom(users).where(eq(users.name, 'Alice')).single().execute();
     expect(row).not.toBeNull();
     expect(row!.name).toBe('Alice');
   });
 
   test('select single returns null', async () => {
-    const row = await client.select().from(users).where(eq(users.name, 'nobody')).single().execute();
+    const row = await client.selectFrom(users).where(eq(users.name, 'nobody')).single().execute();
     expect(row).toBeNull();
   });
 
   test('select with columns', async () => {
-    const rows = await client.select().from(users).columns(['id', 'name']).execute();
+    const rows = await client.selectFrom(users).columns(['id', 'name']).execute();
     expect(rows).toHaveLength(2);
     expect(rows[0]!.id).toBeDefined();
     expect(rows[0]!.name).toBeDefined();
@@ -147,7 +147,7 @@ describe('query builder via executor', () => {
 
   test('insert single row', async () => {
     await client.insert(users).values({ name: 'Charlie', email: 'charlie@test.com', age: 35 }).execute();
-    const rows = await client.select().from(users).execute();
+    const rows = await client.selectFrom(users).execute();
     expect(rows).toHaveLength(3);
   });
 
@@ -159,7 +159,7 @@ describe('query builder via executor', () => {
         { name: 'Dave', email: 'dave@test.com', age: 40 },
       ])
       .execute();
-    const rows = await client.select().from(users).execute();
+    const rows = await client.selectFrom(users).execute();
     expect(rows).toHaveLength(4);
   });
 
@@ -171,13 +171,13 @@ describe('query builder via executor', () => {
 
   test('update', async () => {
     await client.update(users).set({ name: 'Alice Updated' }).where(eq(users.name, 'Alice')).execute();
-    const row = await client.select().from(users).where(eq(users.name, 'Alice Updated')).single().execute();
+    const row = await client.selectFrom(users).where(eq(users.name, 'Alice Updated')).single().execute();
     expect(row).not.toBeNull();
   });
 
   test('delete', async () => {
     await client.delete(posts).where(eq(posts.title, 'Hello World')).execute();
-    const rows = await client.select().from(posts).execute();
+    const rows = await client.selectFrom(posts).execute();
     expect(rows).toHaveLength(0);
   });
 
@@ -192,20 +192,20 @@ describe('query builder via executor', () => {
   });
 
   test('order by', async () => {
-    const rows = await client.select().from(users).orderBy('name', 'desc').execute();
+    const rows = await client.selectFrom(users).orderBy('name', 'desc').execute();
     expect(rows[0]!.name).toBe('Bob');
     expect(rows[1]!.name).toBe('Alice');
   });
 
   test('limit and offset', async () => {
-    const rows = await client.select().from(users).orderBy('id', 'asc').limit(1).offset(1).execute();
+    const rows = await client.selectFrom(users).orderBy('id', 'asc').limit(1).offset(1).execute();
     expect(rows).toHaveLength(1);
     expect(rows[0]!.name).toBe('Bob');
   });
 
   test('distinct', async () => {
     await client.insert(users).values({ name: 'Alice2', email: 'alice2@test.com', age: 30 }).execute();
-    const rows = await client.select().from(users).columns(['age']).distinct().execute();
+    const rows = await client.selectFrom(users).columns(['age']).distinct().execute();
     expect(rows).toHaveLength(2); // ages: 30, 25
   });
 });
