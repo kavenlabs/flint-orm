@@ -42,11 +42,11 @@ const db = flint({ url: './app.db' });
 await db.insert(users).values({ id: 'u1', name: 'Alice', email: 'alice@example.com' }).execute();
 
 // Query
-const adults = await db.select().from(users).where(eq(users.age, 18)).execute();
+const adults = await db.selectFrom(users).where(eq(users.age, 18)).execute();
 //    ^? { id: string; name: string; email: string; age: number; createdAt: Date }[]
 
 // Single row
-const alice = await db.select().from(users).where(eq(users.id, 'u1')).single().execute();
+const alice = await db.selectFrom(users).where(eq(users.id, 'u1')).single().execute();
 //    ^? { id: string; name: string; email: string; age: number; createdAt: Date } | null
 ```
 
@@ -118,24 +118,24 @@ type NewUser = InsertRow<typeof users>;
 
 ```ts
 // All rows
-const all = await db.select().from(users).execute();
+const all = await db.selectFrom(users).execute();
 
 // With conditions
-const active = await db.select().from(users).where(eq(users.active, true)).execute();
+const active = await db.selectFrom(users).where(eq(users.active, true)).execute();
 
 // Narrow columns
-const names = await db.select().from(users).columns(['id', 'name']).execute();
+const names = await db.selectFrom(users).columns(['id', 'name']).execute();
 //    ^? { id: string; name: string }[]
 
 // Single row
-const user = await db.select().from(users).where(eq(users.id, 'u1')).single().execute();
+const user = await db.selectFrom(users).where(eq(users.id, 'u1')).single().execute();
 //    ^? { ... } | null
 
 // Ordering and pagination
-const page = await db.select().from(users).orderBy('name', 'asc').limit(10).offset(20).execute();
+const page = await db.selectFrom(users).orderBy('name', 'asc').limit(10).offset(20).execute();
 
 // Distinct
-const unique = await db.select().from(users).columns(['email']).distinct().execute();
+const unique = await db.selectFrom(users).columns(['email']).distinct().execute();
 ```
 
 ### INSERT
@@ -236,7 +236,7 @@ await db.batch([db.insert(users).values({ id: 'u1', name: 'Alice' }), db.insert(
 import { sql } from 'flint-orm';
 
 const expr = sql`name = ${'Alice'} AND age > ${18}`;
-const result = await db.select().from(users).where(expr).execute();
+const result = await db.selectFrom(users).where(expr).execute();
 
 // Direct execution
 await db.$run('CREATE TABLE test (id INTEGER PRIMARY KEY, name TEXT)');

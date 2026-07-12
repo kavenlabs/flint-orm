@@ -18,10 +18,10 @@
         "picocolors": "1.1.1",
       },
       "peerDependencies": {
-        "@libsql/client": ">=0.10.0",
-        "@tursodatabase/database": ">=0.6.0",
-        "@tursodatabase/sync": ">=0.6.0",
-        "better-sqlite3": ">=7.0.0",
+        "@libsql/client": ">=0.17.4",
+        "@tursodatabase/database": ">=0.6.1",
+        "@tursodatabase/sync": ">=0.6.1",
+        "better-sqlite3": ">=12.11.1",
         "typescript": ">=5.0.0",
       },
       "optionalPeers": [

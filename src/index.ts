@@ -4,7 +4,7 @@
 
 // Core: sql template + createClient (for custom driver adapters)
 export { sql, createClient } from './flint';
-export type { SQLExpression, Executable, SelectStage1, InsertStage1, UpdateStage1 } from './flint';
+export type { SQLExpression, Executable, SelectBuilder, InsertStage1, UpdateStage1 } from './flint';
 export type { Executor } from './executor';
 
 // Schema: table/column definitions (flint-orm/table)

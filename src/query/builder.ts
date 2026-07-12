@@ -145,29 +145,10 @@ export interface Executable {
 /** @internal */
 type JoinType = 'left' | 'inner';
 
-// SELECT builders
-/** Phase 1 of a SELECT — only `.from()` is available. */
-export interface SelectStage1 {
-  from<U extends AnyTable>(table: U): SelectBuilder<U>;
-}
-
-/** @internal Lightweight wrapper that only exposes `.from()`. */
-export class SelectFromBuilder implements SelectStage1 {
-  #executor: Executor;
-  #conditions: Condition[];
-
-  constructor(executor: Executor, conditions: Condition[] = []) {
-    this.#executor = executor;
-    this.#conditions = conditions;
-  }
-
-  from<U extends AnyTable>(table: U): SelectBuilder<U> {
-    return new SelectBuilder(this.#executor, table._.name, table, this.#conditions);
-  }
-}
-
+// SELECT builder
 /**
  * Full SELECT builder — available after `.from()`.
+ * Entry point: `db.selectFrom(table)`.
  * Returns `InferRow<T>[]` (all columns) from `execute()`.
  * Call `.columns()` to narrow — returns a `NarrowedSelectBuilder`.
  */
@@ -224,7 +205,7 @@ export class SelectBuilder<T extends AnyTable> implements Executable {
    * Returns a `NarrowedSelectBuilder` with a clean `{ id: string; name: string }` return type.
    *
    * @example
-   * db.select().from(users).columns(["id", "name"]).execute()
+   * db.selectFrom(users).columns(["id", "name"]).execute()
    * // ^? { id: string; name: string }[]
    */
   columns<K extends keyof InferRow<T>>(keys: K[]): NarrowedSelectBuilder<T, K> {

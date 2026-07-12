@@ -42,7 +42,7 @@ async function loadConfig(): Promise<FlintConfig> {
         `  ${pc.dim("  database: { url: './app.db' },")}\n` +
         `  ${pc.dim("  schema: './db',")}\n` +
         `  ${pc.dim('});')}\n`,
-      'Missing config'
+      'Missing config',
     );
     process.exit(1);
   }
@@ -56,7 +56,7 @@ async function loadConfig(): Promise<FlintConfig> {
       `${pc.bold('flint.config.ts')} does not export a config object.\n\n` +
         `Make sure it has a default export:\n\n` +
         `  ${pc.dim('export default defineConfig({ ... })')}\n`,
-      'Invalid config'
+      'Invalid config',
     );
     process.exit(1);
   }
@@ -75,7 +75,7 @@ async function loadConfig(): Promise<FlintConfig> {
         `  ${pc.dim("  database: { url: './app.db' },")}\n` +
         `  ${pc.dim("  schema: './db',")}\n` +
         `  ${pc.dim('});')}\n`,
-      'Invalid config'
+      'Invalid config',
     );
     process.exit(1);
   }
@@ -102,9 +102,8 @@ async function discoverTables(schemaPath: string): Promise<unknown[]> {
 
   if (!existsSync(abs)) {
     note(
-      `Schema path ${pc.bold(abs)} does not exist.\n\n` +
-        `Check the ${pc.bold('schema')} field in your ${pc.bold('flint.config.ts')}.`,
-      'Schema not found'
+      `Schema path ${pc.bold(abs)} does not exist.\n\n` + `Check the ${pc.bold('schema')} field in your ${pc.bold('flint.config.ts')}.`,
+      'Schema not found',
     );
     process.exit(1);
   }
@@ -119,10 +118,7 @@ async function discoverTables(schemaPath: string): Promise<unknown[]> {
     return importTableFolder(abs);
   }
 
-  note(
-    `Schema path ${pc.bold(abs)} is not a file or directory.`,
-    'Invalid schema path'
-  );
+  note(`Schema path ${pc.bold(abs)} is not a file or directory.`, 'Invalid schema path');
   process.exit(1);
 }
 
@@ -135,10 +131,8 @@ async function importTableFile(filePath: string): Promise<unknown[]> {
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
     note(
-      `Could not load schema file ${pc.bold(filePath)}:\n\n` +
-        `  ${pc.dim(msg)}\n\n` +
-        `Make sure the file exports table() definitions.`,
-      'Schema import error'
+      `Could not load schema file ${pc.bold(filePath)}:\n\n` + `  ${pc.dim(msg)}\n\n` + `Make sure the file exports table() definitions.`,
+      'Schema import error',
     );
     process.exit(1);
   }
@@ -207,9 +201,8 @@ async function cmdGenerate(args: ReturnType<typeof parseArgs>['values'], config:
             previousState = JSON.parse(readFileSync(statePath, 'utf-8'));
           } catch {
             note(
-              `Could not parse ${pc.bold(statePath)}.\n\n` +
-                `The file may be corrupted. Delete it and run ${pc.bold('flint generate')} again.`,
-              'Invalid state file'
+              `Could not parse ${pc.bold(statePath)}.\n\n` + `The file may be corrupted. Delete it and run ${pc.bold('flint generate')} again.`,
+              'Invalid state file',
             );
             process.exit(1);
           }
@@ -332,12 +325,7 @@ async function cmdMigrate(args: ReturnType<typeof parseArgs>['values'], config: 
 
     if (pkg && (msg.includes('Cannot find module') || msg.includes('ERR_MODULE_NOT_FOUND') || msg.includes('not found'))) {
       const installCmd = pkg === '@libsql/client' ? 'npm install @libsql/client' : `npm install ${pkg}`;
-      note(
-        `Driver "${config.driver}" is not installed.\n\n` +
-          `Install it with:\n\n` +
-          `  ${pc.dim(installCmd)}\n`,
-        'Missing driver'
-      );
+      note(`Driver "${config.driver}" is not installed.\n\n` + `Install it with:\n\n` + `  ${pc.dim(installCmd)}\n`, 'Missing driver');
     } else {
       note(`Failed to load driver "${config.driver}":\n\n  ${pc.dim(msg)}`, 'Error');
     }
