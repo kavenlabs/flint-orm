@@ -147,7 +147,7 @@ type JoinType = 'left' | 'inner';
 
 // SELECT builder
 /**
- * Full SELECT builder — available after `.from()`.
+ * Full SELECT builder — created directly via `db.selectFrom(table)`.
  * Entry point: `db.selectFrom(table)`.
  * Returns `InferRow<T>[]` (all columns) from `execute()`.
  * Call `.columns()` to narrow — returns a `NarrowedSelectBuilder`.

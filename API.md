@@ -179,7 +179,7 @@ All `execute()` methods return `Promise<T>` — always `await` regardless of dri
 
 ### `db.selectFrom(table)`
 
-Start a SELECT query. Two-phase: `.from()` is required before anything else.
+Start a SELECT query. Call `.columns()` to narrow, `.where()` to filter, `.execute()` to run.
 
 ```ts
 await db.selectFrom(users).execute();
