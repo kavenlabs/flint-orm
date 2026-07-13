@@ -1,6 +1,16 @@
 {
   "name": "flint-orm",
   "version": "0.7.1",
+  "keywords": [
+    "database",
+    "libsql",
+    "orm",
+    "sqlite",
+    "tanstack-intent",
+    "turso",
+    "typescript"
+  ],
+  "repository": "github:kavenlabs/flint-orm",
   "bin": {
     "flint": "./dist/src/cli.js"
   },
@@ -102,14 +112,5 @@
     "better-sqlite3": {
       "optional": true
     }
-  },
-  "keywords": [
-    "sqlite",
-    "orm",
-    "typescript",
-    "database",
-    "turso",
-    "libsql",
-    "tanstack-intent"
-  ]
+  }
 }
