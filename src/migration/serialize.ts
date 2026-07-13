@@ -68,7 +68,23 @@ function serializeTable(table: AnyTable): SerializedTable {
     }
   }
 
-  return { name: tableName, columns, indexes };
+  // Check for composite primary key definition
+  let primaryKeyColumns: string[] | undefined;
+  if (tableObj.__primaryKey) {
+    const pkDef = tableObj.__primaryKey as { columns: string[] };
+    primaryKeyColumns = pkDef.columns;
+
+    // Validate: no column should have isPrimaryKey if composite PK is defined
+    for (const col of columns) {
+      if (col.isPrimaryKey) {
+        throw new Error(
+          `Column "${col.name}" has primaryKey() but table "${tableName}" also defines a composite primaryKey(). Use one or the other.`,
+        );
+      }
+    }
+  }
+
+  return { name: tableName, columns, indexes, primaryKeyColumns };
 }
 
 // ---------------------------------------------------------------------------

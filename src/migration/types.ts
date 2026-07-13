@@ -23,6 +23,7 @@ export interface SerializedTable {
   name: string;
   columns: SerializedColumn[];
   indexes: SerializedIndex[];
+  primaryKeyColumns?: string[];
 }
 
 /** Serialized index definition. */

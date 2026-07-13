@@ -208,6 +208,13 @@ function diffTable(tableName: string, prev: SerializedTable, curr: SerializedTab
     return [rebuildTable(tableName, prev, curr)];
   }
 
+  // Composite primary key change → rebuild entire table
+  const prevPK = prev.primaryKeyColumns ?? [];
+  const currPK = curr.primaryKeyColumns ?? [];
+  if (JSON.stringify(prevPK) !== JSON.stringify(currPK)) {
+    return [rebuildTable(tableName, prev, curr)];
+  }
+
   // All changes are safe → emit column-level ops + index changes
   const ops: MigrationOperation[] = [...columnOps];
 

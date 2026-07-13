@@ -72,7 +72,7 @@ function parseDefault(dfltValue: unknown): { hasDefault: boolean; defaultValue?:
 function introspectColumns(
   client: Database,
   tableName: string,
-): { columns: SerializedColumn[]; indexRows: { name: string; unique: number; origin: string }[] } {
+): { columns: SerializedColumn[]; indexRows: { name: string; unique: number; origin: string }[]; primaryKeyColumns?: string[] } {
   const rows = client.query(`PRAGMA table_info('${tableName}')`).all() as {
     cid: number;
     name: string;
@@ -134,7 +134,7 @@ function introspectColumns(
     const col: SerializedColumn = {
       name: row.name,
       sqlType: normalizeType(row.type),
-      isPrimaryKey: row.pk === 1,
+      isPrimaryKey: row.pk > 0,
       isNotNull: row.notnull === 1,
       isUnique: uniqueColumns.has(row.name),
       hasDefault,
@@ -151,7 +151,13 @@ function introspectColumns(
     return col;
   });
 
-  return { columns, indexRows };
+  // Detect composite primary key: multiple columns with pk > 0
+  const pkColumns = rows
+    .filter((row) => row.pk > 0)
+    .sort((a, b) => a.pk - b.pk)
+    .map((row) => row.name);
+
+  return { columns, indexRows, primaryKeyColumns: pkColumns.length > 1 ? pkColumns : undefined };
 }
 
 // ---------------------------------------------------------------------------
@@ -214,13 +220,14 @@ export function introspect(client: Database): SchemaState {
   const tables: Record<string, SerializedTable> = {};
 
   for (const { name } of tableRows) {
-    const { columns, indexRows } = introspectColumns(client, name);
+    const { columns, indexRows, primaryKeyColumns } = introspectColumns(client, name);
     const indexes = introspectIndexes(client, indexRows);
 
     tables[name] = {
       name,
       columns,
       indexes,
+      primaryKeyColumns,
     };
   }
 

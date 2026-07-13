@@ -59,12 +59,16 @@ function decodeSelectedRow<T extends AnyTable, C extends keyof InferRow<T>>(
   return out as NarrowRow<InferRow<T>, C>;
 }
 
-/** @internal Find the primary key TS key of a table. */
-function findPKKey(tbl: AnyTable): string {
+/** @internal Find all primary key TS keys of a table (returns array for composite PK support). */
+function findPKKeys(tbl: AnyTable): string[] {
+  const keys: string[] = [];
   for (const [key, col] of columnEntries(tbl)) {
-    if (col.__internal.isPrimaryKey) return key;
+    if (col.__internal.isPrimaryKey) keys.push(key);
   }
-  throw new FlintValidationError('Table has no primary key column');
+  if (keys.length === 0) {
+    throw new FlintValidationError('Table has no primary key column');
+  }
+  return keys;
 }
 
 /** @internal Resolve a join condition from foreign key references. */
@@ -971,8 +975,8 @@ export class JoinBuilderImpl<
   /** @internal Decode flat joined rows into nested result. */
   #decodeJoinRows(rows: Record<string, unknown>[]): JoinResult<Parent, Joined, ParentCols>[] {
     const parentEntries = columnEntries(this.#parent);
-    const pkKey = findPKKey(this.#parent);
-    const pkColName = getCol(this.#parent, pkKey).name;
+    const pkKeys = findPKKeys(this.#parent);
+    const pkColNames = pkKeys.map((k) => getCol(this.#parent, k).name);
 
     const childEntryMaps: {
       name: string;
@@ -990,7 +994,7 @@ export class JoinBuilderImpl<
     const grouped = new Map<unknown, { parent: Record<string, unknown>; children: Record<string, unknown>[][] }>();
 
     for (const row of rows) {
-      const pk = row[pkColName];
+      const pk = pkColNames.length === 1 ? row[pkColNames[0]!] : pkColNames.map((name) => String(row[name])).join('||');
       if (!grouped.has(pk)) {
         const parentRow: Record<string, unknown> = {};
         for (const [key, col] of parentEntries) {
@@ -1173,8 +1177,8 @@ export class SingleJoinBuilderImpl<
   /** @internal Decode flat joined rows into a single nested result. */
   #decodeJoinRow(rows: Record<string, unknown>[]): JoinResult<Parent, Joined, ParentCols> | null {
     const parentEntries = columnEntries(this.#parent);
-    const pkKey = findPKKey(this.#parent);
-    const pkColName = getCol(this.#parent, pkKey).name;
+    const pkKeys = findPKKeys(this.#parent);
+    const pkColNames = pkKeys.map((k) => getCol(this.#parent, k).name);
 
     const childEntryMaps: {
       name: string;
@@ -1192,7 +1196,7 @@ export class SingleJoinBuilderImpl<
     const grouped = new Map<unknown, { parent: Record<string, unknown>; children: Record<string, unknown>[][] }>();
 
     for (const r of rows) {
-      const pk = r[pkColName];
+      const pk = pkColNames.length === 1 ? r[pkColNames[0]!] : pkColNames.map((name) => String(r[name])).join('||');
       if (!grouped.has(pk)) {
         const parentRow: Record<string, unknown> = {};
         for (const [key, col] of parentEntries) {

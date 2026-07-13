@@ -32,7 +32,7 @@ type StampedColumn = ColumnDef<any, any> & {
 export function table<T extends Record<string, ColumnDef<any, any>>>(
   name: string,
   columns: T,
-  indexFn?: (t: TableDef<T>) => IndexBuilder[],
+  indexFn?: (t: TableDef<T>) => (IndexBuilder | PrimaryKeyBuilder)[],
 ): TableDef<T> {
   // Stamp table name onto each column
   const stamped = Object.create(null);
@@ -104,12 +104,39 @@ export function table<T extends Record<string, ColumnDef<any, any>>>(
     _: { name },
   }) as TableDef<T>;
 
-  // Attach indexes from callback (auto-call .build() on each)
+  // Attach indexes and composite primary key from callback
   if (indexFn) {
     const raw = indexFn(result);
     if (raw.length > 0) {
       const tableObj = result as Record<string, unknown>;
-      tableObj.__indexes = raw.map((item) => (item as IndexBuilderInternal).build());
+      const indexes: IndexDef[] = [];
+      let primaryKeyDef: PrimaryKeyDef | undefined;
+
+      for (const item of raw) {
+        if (item && typeof item === 'object' && '_type' in item) {
+          if ((item as PrimaryKeyBuilderInternal)._type === 'primaryKey') {
+            primaryKeyDef = (item as PrimaryKeyBuilderInternal).build();
+          } else {
+            indexes.push((item as IndexBuilderInternal).build());
+          }
+        }
+      }
+
+      // Validate: no column-level PK if composite PK is defined
+      if (primaryKeyDef) {
+        for (const [key, col] of Object.entries(columns)) {
+          if (col.__internal.isPrimaryKey) {
+            throw new Error(
+              `Column "${key}" has primaryKey() but table "${name}" also defines a composite primaryKey(). Use one or the other.`,
+            );
+          }
+        }
+        tableObj.__primaryKey = primaryKeyDef;
+      }
+
+      if (indexes.length > 0) {
+        tableObj.__indexes = indexes;
+      }
     }
   }
 
@@ -170,7 +197,7 @@ function toSnakeCase(str: string): string {
 export function snakeCaseTable<T extends Record<string, ColumnDef<any, any>>>(
   tableName: string,
   columns: T,
-  indexFn?: (t: TableDef<T>) => IndexBuilder[],
+  indexFn?: (t: TableDef<T>) => (IndexBuilder | PrimaryKeyBuilder)[],
 ): TableDef<T> {
   // Create a new object with snake_case names stamped onto each column
   const converted: Record<string, ColumnDef<any, any>> = {};
@@ -265,7 +292,63 @@ export interface IndexBuilder {
 
 /** @internal Internal builder with `.build()` — accepted by `table()`. */
 interface IndexBuilderInternal extends IndexBuilder {
+  _type: 'index';
   build(): IndexDef;
+}
+
+// ---------------------------------------------------------------------------
+// Primary key definition — chainable builder (composite PK)
+// ---------------------------------------------------------------------------
+
+/** A composite primary key definition — used internally by the migration system. */
+export interface PrimaryKeyDef {
+  columns: string[];
+}
+
+/** Public builder returned by `primaryKey()` — chain `.on(columns)`. */
+export interface PrimaryKeyBuilder {
+  /** Add one or more columns to the composite primary key. */
+  on(...columns: ColumnDef<any, any>[]): PrimaryKeyBuilder;
+}
+
+/** @internal Internal builder with `.build()` — accepted by `table()`. */
+interface PrimaryKeyBuilderInternal extends PrimaryKeyBuilder {
+  _type: 'primaryKey';
+  build(): PrimaryKeyDef;
+}
+
+/**
+ * Create a composite primary key definition using a chainable API.
+ *
+ * @param name - Optional name (reserved for future use, currently unused in SQL)
+ * @returns A PrimaryKeyBuilder — chain `.on(columns)`
+ *
+ * @example
+ * const userRoles = table("user_roles", {
+ *   userId: text("user_id"),
+ *   roleId: text("role_id"),
+ * }, (t) => [
+ *   primaryKey().on(t.userId, t.roleId),
+ * ]);
+ */
+export function primaryKey(): PrimaryKeyBuilderInternal {
+  let columns: ColumnDef<any, any>[] = [];
+
+  const builder: PrimaryKeyBuilderInternal = {
+    _type: 'primaryKey',
+    on(...cols) {
+      columns = cols;
+      return builder;
+    },
+    build(): PrimaryKeyDef {
+      if (columns.length === 0) {
+        throw new Error('primaryKey() has no columns — call .on() before returning');
+      }
+      return { columns: columns.map((c) => c.name) };
+    },
+  };
+
+  return builder;
 }
 
 /**
@@ -289,6 +372,7 @@ export function index(name: string): IndexBuilderInternal {
   let isUnique = false;
 
   const builder: IndexBuilderInternal = {
+    _type: 'index',
     on(...cols) {
       columns = cols;
       return builder;

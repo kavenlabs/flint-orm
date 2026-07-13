@@ -17,10 +17,11 @@ function sqlType(col: SerializedColumn): string {
 // Single column → DDL fragment
 // ---------------------------------------------------------------------------
 
-function columnToDDL(col: SerializedColumn): string {
+function columnToDDL(col: SerializedColumn, isCompositePK: boolean = false): string {
   const parts: string[] = [col.name, sqlType(col)];
 
-  if (col.isPrimaryKey) parts.push('PRIMARY KEY');
+  // Skip inline PRIMARY KEY for composite PK tables — it's emitted as a table constraint
+  if (col.isPrimaryKey && !isCompositePK) parts.push('PRIMARY KEY');
   if (col.isAutoIncrement === true) parts.push('AUTOINCREMENT');
   if (col.isNotNull && !col.isPrimaryKey) parts.push('NOT NULL');
   if (col.isUnique && !col.isPrimaryKey) parts.push('UNIQUE');
@@ -81,7 +82,12 @@ function rebuildTableToSQL(op: RebuildTableOp): string[] {
   stmts.push('PRAGMA defer_foreign_keys = 1');
 
   // Create temporary table with the new schema
-  const cols = newTable.columns.map(columnToDDL).join(',\n  ');
+  const isComposite = newTable.primaryKeyColumns && newTable.primaryKeyColumns.length > 0;
+  const colDefs = newTable.columns.map((c) => columnToDDL(c, isComposite));
+  if (isComposite) {
+    colDefs.push(`PRIMARY KEY(${newTable.primaryKeyColumns!.join(', ')})`);
+  }
+  const cols = colDefs.join(',\n  ');
   stmts.push(`CREATE TABLE ${tempName} (\n  ${cols}\n)`);
 
   // Build explicit INSERT with column mapping.
@@ -124,7 +130,12 @@ function rebuildTableToSQL(op: RebuildTableOp): string[] {
 function operationToSQL(op: MigrationOperation): string[] {
   switch (op.type) {
     case 'addTable': {
-      const cols = op.table.columns.map(columnToDDL).join(',\n  ');
+      const isComposite = op.table.primaryKeyColumns && op.table.primaryKeyColumns.length > 0;
+      const colDefs = op.table.columns.map((c) => columnToDDL(c, isComposite));
+      if (isComposite) {
+        colDefs.push(`PRIMARY KEY(${op.table.primaryKeyColumns!.join(', ')})`);
+      }
+      const cols = colDefs.join(',\n  ');
       const stmts: string[] = [`CREATE TABLE ${op.table.name} (\n  ${cols}\n)`];
       for (const idx of op.table.indexes) {
         stmts.push(indexToSQL(idx, op.table.name));
