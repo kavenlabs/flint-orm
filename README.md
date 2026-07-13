@@ -19,6 +19,8 @@ bun add flint-orm
 npm install flint-orm
 ```
 
+**Using an AI agent?** Run `npx @tanstack/intent@latest install` to get agent-friendly skills for this library.
+
 ## Quick Start
 
 ```ts

@@ -1,0 +1,132 @@
+# skills/_artifacts/skill_tree.yaml
+library:
+  name: 'flint-orm'
+  version: '0.7.0'
+  repository: 'https://github.com/kavenlabs/flint-orm'
+  description: 'A type-safe, driver-agnostic SQLite ORM for JavaScript'
+generated_from:
+  domain_map: 'skills/_artifacts/domain_map.yaml'
+  skill_spec: 'skills/_artifacts/skill_spec.md'
+generated_at: '2026-07-13'
+
+skills:
+  - name: 'setup-client'
+    slug: 'setup-client'
+    type: 'core'
+    domain: 'setup'
+    path: 'skills/setup-client/SKILL.md'
+    description: 'Install flint-orm, choose a driver, and connect to a database. Covers flint() factory, driver entry points, and flint.config.ts configuration.'
+    requires: []
+    sources:
+      - 'kavenlabs/flint-orm:src/entries/bun-sqlite.ts'
+      - 'kavenlabs/flint-orm:src/entries/libsql.ts'
+      - 'kavenlabs/flint-orm:src/entries/libsql-web.ts'
+      - 'kavenlabs/flint-orm:src/entries/better-sqlite3.ts'
+      - 'kavenlabs/flint-orm:README.md'
+    subsystems: []
+    references: []
+
+  - name: 'driver-selection'
+    slug: 'driver-selection'
+    type: 'core'
+    domain: 'setup'
+    path: 'skills/driver-selection/SKILL.md'
+    description: 'Choose the right driver for your environment: local file, in-memory, serverless, or remote. Covers bun:sqlite, better-sqlite3, libsql, libsql-web, turso.'
+    requires: []
+    sources:
+      - 'kavenlabs/flint-orm:src/entries/bun-sqlite.ts'
+      - 'kavenlabs/flint-orm:src/entries/libsql.ts'
+      - 'kavenlabs/flint-orm:src/entries/libsql-web.ts'
+      - 'kavenlabs/flint-orm:src/entries/better-sqlite3.ts'
+      - 'kavenlabs/flint-orm:src/entries/turso.ts'
+      - 'kavenlabs/flint-orm:src/entries/turso-sync.ts'
+    subsystems:
+      - 'local file drivers'
+      - 'remote/file drivers'
+      - 'serverless drivers'
+      - 'turso drivers'
+    references:
+      - 'references/driver-comparison.md'
+
+  - name: 'define-schema'
+    slug: 'define-schema'
+    type: 'core'
+    domain: 'schema'
+    path: 'skills/define-schema/SKILL.md'
+    description: 'Create tables with columns, indexes, constraints, and foreign keys. Covers table(), snakeCase.table(), column constructors, modifiers, and type inference.'
+    requires: []
+    sources:
+      - 'kavenlabs/flint-orm:src/schema/columns.ts'
+      - 'kavenlabs/flint-orm:src/schema/table.ts'
+      - 'kavenlabs/flint-orm:README.md'
+      - 'kavenlabs/flint-orm:API.md'
+    subsystems:
+      - 'column constructors'
+      - 'column modifiers'
+    references:
+      - 'references/column-modifiers.md'
+
+  - name: 'write-queries'
+    slug: 'write-queries'
+    type: 'core'
+    domain: 'queries'
+    path: 'skills/write-queries/SKILL.md'
+    description: 'Read, write, and modify data with type-safe SELECT, INSERT, UPDATE, DELETE, joins, and aggregates. Covers selectFrom, insert, update, delete, leftJoin, innerJoin, batch, and raw SQL.'
+    requires: []
+    sources:
+      - 'kavenlabs/flint-orm:src/query/builder.ts'
+      - 'kavenlabs/flint-orm:src/query/conditions.ts'
+      - 'kavenlabs/flint-orm:src/query/aggregates.ts'
+      - 'kavenlabs/flint-orm:src/flint.ts'
+      - 'kavenlabs/flint-orm:README.md'
+      - 'kavenlabs/flint-orm:API.md'
+    subsystems: []
+    references:
+      - 'references/condition-operators.md'
+
+  - name: 'run-migrations'
+    slug: 'run-migrations'
+    type: 'core'
+    domain: 'migrations'
+    path: 'skills/run-migrations/SKILL.md'
+    description: 'Generate and apply schema migrations safely using the CLI or programmatic API. Covers flint generate, flint migrate, and the migration pipeline.'
+    requires: []
+    sources:
+      - 'kavenlabs/flint-orm:src/migration/generate.ts'
+      - 'kavenlabs/flint-orm:src/migration/migrate.ts'
+      - 'kavenlabs/flint-orm:src/migration/sql.ts'
+      - 'kavenlabs/flint-orm:src/cli.ts'
+      - 'kavenlabs/flint-orm:README.md'
+      - 'kavenlabs/flint-orm:API.md'
+    subsystems: []
+    references: []
+
+  - name: 'update-schema'
+    slug: 'update-schema'
+    type: 'core'
+    domain: 'migrations'
+    path: 'skills/update-schema/SKILL.md'
+    description: 'Add columns and tables without data loss. Covers safe vs unsafe migrations, rebuildTable operation, and additive migration patterns.'
+    requires: []
+    sources:
+      - 'kavenlabs/flint-orm:src/migration/diff.ts'
+      - 'kavenlabs/flint-orm:src/migration/sql.ts'
+      - 'kavenlabs/flint-orm:src/migration/migrate.ts'
+      - 'kavenlabs/flint-orm:README.md'
+    subsystems: []
+    references: []
+
+  - name: 'batch-transactions'
+    slug: 'batch-transactions'
+    type: 'core'
+    domain: 'queries'
+    path: 'skills/batch-transactions/SKILL.md'
+    description: 'Run multiple queries atomically in a single transaction. Covers db.batch(), Executable interface, and transaction safety.'
+    requires: []
+    sources:
+      - 'kavenlabs/flint-orm:src/flint.ts'
+      - 'kavenlabs/flint-orm:src/query/builder.ts'
+      - 'kavenlabs/flint-orm:README.md'
+      - 'kavenlabs/flint-orm:API.md'
+    subsystems: []
+    references: []
