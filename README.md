@@ -1,6 +1,6 @@
 # Flint ORM
 
-A type-safe SQLite ORM for JavaScript. One schema, any driver.
+Type-safe SQLite ORM for JavaScript
 
 ## Features
 
