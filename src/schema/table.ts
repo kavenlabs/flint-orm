@@ -126,9 +126,7 @@ export function table<T extends Record<string, ColumnDef<any, any>>>(
       if (primaryKeyDef) {
         for (const [key, col] of Object.entries(columns)) {
           if (col.__internal.isPrimaryKey) {
-            throw new Error(
-              `Column "${key}" has primaryKey() but table "${name}" also defines a composite primaryKey(). Use one or the other.`,
-            );
+            throw new Error(`Column "${key}" has primaryKey() but table "${name}" also defines a composite primaryKey(). Use one or the other.`);
           }
         }
         tableObj.__primaryKey = primaryKeyDef;
@@ -168,7 +166,17 @@ export type InferRow<T extends TableDef<any>> =
     : never;
 
 /** @internal Check if a column has an auto-generated default. */
-type HasAutoDefault<C> = C extends DateColumnDef ? true : C extends IntegerColumnDef<any> ? true : false;
+type HasAutoDefault<C> = C extends DateColumnDef
+  ? true
+  : C extends IntegerColumnDef<any>
+    ? true
+    : C extends ColumnDef<any, any>
+      ? C['__internal']['defaultFn'] extends undefined
+        ? C['__internal']['hasDefault'] extends true
+          ? true
+          : false
+        : true
+      : false;
 
 /** The row type for inserts — columns with auto-defaults (integer, date) are optional. */
 export type InsertRow<T extends TableDef<any>> = {
