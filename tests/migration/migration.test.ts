@@ -1,5 +1,5 @@
 import { describe, test, expect } from 'bun:test';
-import { addTable, dropTable, renameTable, addColumn, dropColumn, renameColumn } from '../../src/migration/operations.js';
+import { addTable, dropTable, renameTable, addColumn, dropColumn, renameColumn } from '../../src/migration/operations';
 
 describe('addTable', () => {
   test('creates operation with table name', () => {

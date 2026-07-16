@@ -2,15 +2,15 @@
 // flint-orm/migration — public API for the migration system
 // ---------------------------------------------------------------------------
 
-export { defineMigration } from './migration.js';
-export { serializeSchema } from './serialize.js';
-export { diffSchemas, emptyState, resolveRenames, CancellationError } from './diff.js';
-export type { RenamePrompt } from './diff.js';
-export { generateSQL } from './sql.js';
-export { generate } from './generate.js';
-export type { GenerateOptions } from './generate.js';
-export { migrate, getMigrationStatus } from './migrate.js';
-export type { MigrateOptions, MigrateResult, MigrationStatus } from './migrate.js';
+export { defineMigration } from './migration';
+export { serializeSchema } from './serialize';
+export { diffSchemas, emptyState, resolveRenames, CancellationError } from './diff';
+export type { RenamePrompt } from './diff';
+export { generateSQL } from './sql';
+export { generate } from './generate';
+export type { GenerateOptions } from './generate';
+export { migrate, getMigrationStatus } from './migrate';
+export type { MigrateOptions, MigrateResult, MigrationStatus } from './migrate';
 export {
   addTable,
   dropTable,
@@ -23,7 +23,7 @@ export {
   modifyColumn,
   modifyIndex,
   rebuildTable,
-} from './operations.js';
+} from './operations';
 export type {
   SchemaState,
   SerializedColumn,
@@ -34,4 +34,4 @@ export type {
   ModifyColumnOp,
   ModifyIndexOp,
   RebuildTableOp,
-} from './types.js';
+} from './types';

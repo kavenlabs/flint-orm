@@ -13,7 +13,7 @@ import type {
   DropColumnOp,
   AddTableOp,
   DropTableOp,
-} from './types.js';
+} from './types';
 import {
   addTable,
   dropTable,
@@ -26,7 +26,7 @@ import {
   modifyColumn,
   modifyIndex,
   rebuildTable,
-} from './operations.js';
+} from './operations';
 
 // ---------------------------------------------------------------------------
 // CancellationError — thrown when user cancels an interactive prompt.

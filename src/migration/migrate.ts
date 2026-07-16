@@ -6,9 +6,9 @@
 import { existsSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import type { Executor } from '../executor.js';
-import type { MigrationFile, RebuildTableOp } from './types.js';
-import { generateSQLStatements } from './sql.js';
+import type { Executor } from '../executor';
+import type { MigrationFile, RebuildTableOp } from './types';
+import { generateSQLStatements } from './sql';
 
 // ---------------------------------------------------------------------------
 // Types

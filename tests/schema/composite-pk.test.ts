@@ -1,10 +1,10 @@
 import { describe, test, expect } from 'bun:test';
-import { table, primaryKey, index } from '../../src/schema/table.js';
-import { text } from '../../src/schema/columns.js';
-import { serializeSchema } from '../../src/migration/serialize.js';
-import { diffSchemas } from '../../src/migration/diff.js';
-import { generateSQL } from '../../src/migration/sql.js';
-import type { SchemaState } from '../../src/migration/types.js';
+import { table, primaryKey, index } from '../../src/schema/table';
+import { text } from '../../src/schema/columns';
+import { serializeSchema } from '../../src/migration/serialize';
+import { diffSchemas } from '../../src/migration/diff';
+import { generateSQL } from '../../src/migration/sql';
+import type { SchemaState } from '../../src/migration/types';
 
 // ---------------------------------------------------------------------------
 // Schema definition tests

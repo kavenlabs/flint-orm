@@ -1,7 +1,7 @@
 import { describe, test, expect } from 'bun:test';
-import { diffSchemas } from '../../src/migration/diff.js';
-import { generateSQL, generateSQLStatements } from '../../src/migration/sql.js';
-import type { SchemaState, RebuildTableOp, ModifyColumnOp } from '../../src/migration/types.js';
+import { diffSchemas } from '../../src/migration/diff';
+import { generateSQL, generateSQLStatements } from '../../src/migration/sql';
+import type { SchemaState, RebuildTableOp, ModifyColumnOp } from '../../src/migration/types';
 
 // ---------------------------------------------------------------------------
 // Helper — creates a minimal SerializedTable

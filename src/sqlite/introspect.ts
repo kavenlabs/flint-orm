@@ -4,7 +4,7 @@
 // ---------------------------------------------------------------------------
 
 import type { Database } from 'bun:sqlite';
-import type { SchemaState, SerializedTable, SerializedColumn, SerializedIndex } from '../migration/types.js';
+import type { SchemaState, SerializedTable, SerializedColumn, SerializedIndex } from '../migration/types';
 
 // ---------------------------------------------------------------------------
 // Column type normalization — map SQLite type strings to canonical types

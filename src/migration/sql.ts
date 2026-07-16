@@ -3,7 +3,7 @@
 // Each operation maps to exactly one known-correct SQL statement.
 // ---------------------------------------------------------------------------
 
-import type { MigrationOperation, SerializedColumn, SerializedIndex, RebuildTableOp } from './types.js';
+import type { MigrationOperation, SerializedColumn, SerializedIndex, RebuildTableOp } from './types';
 
 // ---------------------------------------------------------------------------
 // Column → SQL type

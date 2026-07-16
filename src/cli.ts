@@ -7,12 +7,12 @@ import { parseArgs, styleText } from 'node:util';
 import { statSync, readdirSync, existsSync, readFileSync } from 'node:fs';
 import { join, resolve, isAbsolute } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import type { AnyTable, TableDef } from './schema/table.js';
-import type { SchemaState } from './migration/types.js';
-import { outro, log, cancel, isCancel, select, pc, note } from './cli/ui.js';
-import { CancellationError } from './migration/diff.js';
-import type { RenamePrompt } from './migration/diff.js';
-import type { Executor } from './executor.js';
+import type { AnyTable, TableDef } from './schema/table';
+import type { SchemaState } from './migration/types';
+import { outro, log, cancel, isCancel, select, pc, note } from './cli/ui';
+import { CancellationError } from './migration/diff';
+import type { RenamePrompt } from './migration/diff';
+import type { Executor } from './executor';
 
 // ---------------------------------------------------------------------------
 // Config loading
@@ -182,9 +182,9 @@ async function cmdGenerate(args: ReturnType<typeof parseArgs>['values'], config:
 
   if (preview) {
     // Dynamic import of migration functions
-    const { serializeSchema } = await import('./migration/serialize.js');
-    const { diffSchemas, emptyState, resolveRenames } = await import('./migration/diff.js');
-    const { generateSQL } = await import('./migration/sql.js');
+    const { serializeSchema } = await import('./migration/serialize');
+    const { diffSchemas, emptyState, resolveRenames } = await import('./migration/diff');
+    const { generateSQL } = await import('./migration/sql');
 
     // Find latest state
     const migrationsDir = resolve(process.cwd(), config.migrations ?? './flint');
@@ -231,7 +231,7 @@ async function cmdGenerate(args: ReturnType<typeof parseArgs>['values'], config:
   }
 
   // Dynamic import of the generate function
-  const { generate } = await import('./migration/generate.js');
+  const { generate } = await import('./migration/generate');
 
   try {
     const migrationsDir = resolve(process.cwd(), config.migrations ?? './flint');
@@ -255,7 +255,7 @@ async function cmdGenerate(args: ReturnType<typeof parseArgs>['values'], config:
 }
 
 async function cmdMigrate(args: ReturnType<typeof parseArgs>['values'], config: FlintConfig): Promise<void> {
-  const { migrate, getMigrationStatus } = await import('./migration/migrate.js');
+  const { migrate, getMigrationStatus } = await import('./migration/migrate');
 
   const migrationsDir = resolve(process.cwd(), config.migrations ?? './flint');
   const dryRun = args['dry-run'] === true;

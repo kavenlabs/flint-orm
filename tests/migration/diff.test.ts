@@ -1,5 +1,5 @@
 import { describe, test, expect } from 'bun:test';
-import { diffSchemas } from '../../src/migration/diff.js';
+import { diffSchemas } from '../../src/migration/diff';
 import type { SchemaState, AddTableOp, DropTableOp, AddColumnOp, DropColumnOp, ModifyColumnOp, ModifyIndexOp } from '../../src/migration/types.js';
 
 describe('diffSchema', () => {

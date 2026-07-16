@@ -18,7 +18,7 @@ import type {
   SerializedColumn,
   SerializedIndex,
   SerializedTable,
-} from './types.js';
+} from './types';
 
 export function addTable(table: Omit<SerializedTable, 'indexes'> & { indexes?: SerializedIndex[] }): AddTableOp {
   return { type: 'addTable', table: { ...table, indexes: table.indexes ?? [] } };

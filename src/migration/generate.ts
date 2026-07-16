@@ -5,12 +5,12 @@
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync, readdirSync } from 'fs';
 import { join } from 'path';
-import type { TableDef } from '../schema/table.js';
-import type { SchemaState, MigrationOperation, SerializedColumn, SerializedIndex, SerializedTable } from './types.js';
-import { serializeSchema } from './serialize.js';
-import { diffSchemas, emptyState, resolveRenames } from './diff.js';
-import type { RenamePrompt } from './diff.js';
-import { generateSQL } from './sql.js';
+import type { TableDef } from '../schema/table';
+import type { SchemaState, MigrationOperation, SerializedColumn, SerializedIndex, SerializedTable } from './types';
+import { serializeSchema } from './serialize';
+import { diffSchemas, emptyState, resolveRenames } from './diff';
+import type { RenamePrompt } from './diff';
+import { generateSQL } from './sql';
 
 // ---------------------------------------------------------------------------
 // Random word lists for migration folder names

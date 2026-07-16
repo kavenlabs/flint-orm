@@ -1,6 +1,6 @@
 import { describe, test, expect } from 'bun:test';
-import { table } from '../../src/schema/table.js';
-import { text, integer, boolean, json, date } from '../../src/schema/columns.js';
+import { table } from '../../src/schema/table';
+import { text, integer, boolean, json, date } from '../../src/schema/columns';
 
 describe('table', () => {
   test('creates table with name', () => {

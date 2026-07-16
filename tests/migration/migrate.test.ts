@@ -26,8 +26,8 @@ function createUsersMigration(timestamp: number) {
     timestamp,
     'init_users',
     `
-import { defineMigration } from "../../src/migration/migration.js";
-import { addTable } from "../../src/migration/operations.js";
+import { defineMigration } from "../../src/migration/migration";
+import { addTable } from "../../src/migration/operations";
 
 export default defineMigration({
   name: "init_users",
@@ -51,8 +51,8 @@ function createEmailMigration(timestamp: number) {
     timestamp,
     'add_email',
     `
-import { defineMigration } from "../../src/migration/migration.js";
-import { addColumn } from "../../src/migration/operations.js";
+import { defineMigration } from "../../src/migration/migration";
+import { addColumn } from "../../src/migration/operations";
 
 export default defineMigration({
   name: "add_email",

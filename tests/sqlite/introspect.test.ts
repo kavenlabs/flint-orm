@@ -1,6 +1,6 @@
 import { describe, test, expect, beforeAll, afterAll } from 'bun:test';
 import { Database } from 'bun:sqlite';
-import { introspect } from '../../src/sqlite/introspect.js';
+import { introspect } from '../../src/sqlite/introspect';
 
 let db: Database;
 

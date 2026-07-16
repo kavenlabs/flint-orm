@@ -3,9 +3,9 @@
 // representation that can be diffed and stored in state.json.
 // ---------------------------------------------------------------------------
 
-import type { ColumnDef } from '../schema/columns.js';
-import type { AnyTable } from '../schema/table.js';
-import type { SchemaState, SerializedColumn, SerializedIndex, SerializedTable } from './types.js';
+import type { ColumnDef } from '../schema/columns';
+import type { AnyTable } from '../schema/table';
+import type { SchemaState, SerializedColumn, SerializedIndex, SerializedTable } from './types';
 
 // ---------------------------------------------------------------------------
 // Serialize a single column
